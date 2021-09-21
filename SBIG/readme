@@ -1,0 +1,18 @@
+The files in this directory support the SBIG cameras. Installation of SBIG driver (libsbigudrv.so) is required.
+
+Installing the SBGIG driver:
+
+Copy the SBIG driver (libsbigudrv.so) to /usr/local/lib
+Drivers for ARM, 32-bit and 64 bit Intel processors are in the directory SBIG_dev.
+
+Now copy 51-sbig-debian.rules into /etc/udev/rules.d  (the rules file is also in the SBIG_Dev directory)
+
+And lastly, point LD_LIBRARY_PATH to /usr/local/lib
+e.g. add line to .bashrc file:  export LD_LIBRARY_PATH="/usr/local/lib"
+
+Notes on USB support, Silber, 2016-04-14:
+  - I had no end of trouble making the SBIG work with my Dell Precision M4500 laptop.
+  - Eventually I got it working. I tried a number of things related to the USB ports.
+  - Ultimately I went into Dell's GUI BIOS configuration menu (hit F2 while booting), and
+     - turned off an option for Legacy USB Emulation
+  - Now the camera works (dual booting into Lubuntu)
