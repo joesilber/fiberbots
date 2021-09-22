@@ -37,54 +37,45 @@ class Lawicel:
         for port_no, description, device in serial_list:
             #print(f"a {port_no} b {description} c {device}")
             if 'USB' in description:
+                handle = serial.Serial(port_no)
                 try:
-                    handle = serial.Serial(port_no)
-                except serial.SerialException as e:
-                    print(port_no + ': serial exception')
-                    #print('serial port might be already in use')
-                    #print(e)
-                    handle = None
+                    handle.reset_input_buffer()
+                    # Retrieve the serial number
+                    handle.write('N\r'.encode())  # C\r
 
-                if handle is not None:  # If the connexion was successful
-                    #print(handle)
-                    try:
-                        handle.reset_input_buffer()
-                        # Retrieve the serial number
-                        handle.write('N\r'.encode())  # C\r
+                    watchdog = time.perf_counter()
+                    while handle.inWaiting() < 6 and time.perf_counter() - CAN_DELAY_BETWEEN_CONFIG_COMMANDS < watchdog:
+                        _ = 1
 
-                        watchdog = time.perf_counter()
-                        while handle.inWaiting() < 6 and time.perf_counter() - CAN_DELAY_BETWEEN_CONFIG_COMMANDS < watchdog:
-                            _ = 1
+                    input_buffer = handle.readline(handle.inWaiting())
 
-                        input_buffer = handle.readline(handle.inWaiting())
-
-                        if not len(input_buffer.decode()) == 6:
-                            print(
-                                'Wrong lawicel serial number length')  # raise errors.CANError("CAN could not retrieve the transceiver's serial number") from None
-                            raise Exception
-                        else:
-                            serial_no = str(input_buffer[1:5].decode())
-                            print(f'{port_no}: lawicel CAN USB found with serial: {serial_no}')
-                    except Exception as e:
-                        handle.close()
-                        print(e)
-                        # raise e from None
+                    if not len(input_buffer.decode()) == 6:
+                        print(
+                            'Wrong lawicel serial number length')  # raise errors.CANError("CAN could not retrieve the transceiver's serial number") from None
+                        raise Exception
                     else:
-                        if serial_no == desiredserial or desiredserial is None:
-                            print(f'connecting to lawicel CAN USB: {serial_no}')
-                            try:
-                                handle.write('C\r'.encode())  # Close can channel
-                                handle.write('S8\r'.encode())  # Set the Baud rate to 1Mb/s
-                                handle.write('O\r'.encode())  # Open can channel
-                                handle.reset_input_buffer()
-                            except Exception as e:
-                                print('lawicel CAN USB connection failed to set Baudrate or open channel')
-                                print(e)
-                            self.handle = handle
-                            self.serial_no = serial_no
-                            self.success = True
-                            return
-                        handle.close()
+                        serial_no = str(input_buffer[1:5].decode())
+                        print(f'{port_no}: lawicel CAN USB found with serial: {serial_no}')
+                except Exception as e:
+                    handle.close()
+                    print(e)
+                    # raise e from None
+                else:
+                    if serial_no == desiredserial or desiredserial is None:
+                        print(f'connecting to lawicel CAN USB: {serial_no}')
+                        try:
+                            handle.write('C\r'.encode())  # Close can channel
+                            handle.write('S8\r'.encode())  # Set the Baud rate to 1Mb/s
+                            handle.write('O\r'.encode())  # Open can channel
+                            handle.reset_input_buffer()
+                        except Exception as e:
+                            print('lawicel CAN USB connection failed to set Baudrate or open channel')
+                            print(e)
+                        self.handle = handle
+                        self.serial_no = serial_no
+                        self.success = True
+                        return
+                    handle.close()
         print('No lawicel connection has been established')
         self.handle = []
         self.serial_no = []
