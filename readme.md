@@ -60,6 +60,12 @@ Low-level control of the motors that drive the robots.
 
 As of 2021-09-21, the code is for electronics received from EPFL in 2020.
 
+When using the Lawicel CAN-USB dongle on Linux, we need the user to be in the group `dialout`. To do so:
+~~~
+sudo adduser <username> dialout
+~~~
+Then reboot. It is only necessary to do this setting one time for a given user.
+
 ## other
 Stuff that isn't currently in use, for example old code that we may want to use parts of. Items here may be nonfunctional, and for information only.
 
