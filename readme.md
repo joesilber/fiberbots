@@ -1,6 +1,15 @@
 # fiberbots
 code for operating and testing fiber positioner robots
 
+# github tips
+At LBNL test stand we may run as a common user `ldrd`. Therefore to commit code as yourself on github:
+~~~
+git -c user.name="<your github user name>" -c user.email=<your email address> commit -a -m "descriptive comment saying what you changed"
+~~~
+Then paste in your Personal Access Token at the prompt `Username for 'https://github.com': `, and at the following password prompt just hit enter.
+
+# repo contents
+
 ## bin
 These are the high-level scripts that you run day-to-day.
 
