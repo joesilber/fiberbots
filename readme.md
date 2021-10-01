@@ -1,6 +1,8 @@
 # fiberbots
 code for operating and testing fiber positioner robots
 
+# repo contents
+
 ## bin
 These are the high-level scripts that you run day-to-day.
 
@@ -60,7 +62,21 @@ Low-level control of the motors that drive the robots.
 
 As of 2021-09-21, the code is for electronics received from EPFL in 2020.
 
+When using the Lawicel CAN-USB dongle on Linux, we need the user to be in the group `dialout`. To do so:
+~~~
+sudo adduser <username> dialout
+~~~
+Then reboot. It is only necessary to do this setting one time for a given user.
+
 ## other
 Stuff that isn't currently in use, for example old code that we may want to use parts of. Items here may be nonfunctional, and for information only.
+
+
+# github tips
+At LBNL test stand we may run as a common user `ldrd`. Therefore to commit code as yourself on github:
+~~~
+git -c user.name="<your github user name>" -c user.email=<your email address> commit -a -m "descriptive comment saying what you changed"
+~~~
+Then paste in your Personal Access Token at the prompt `Username for 'https://github.com': `, and at the following password prompt just hit enter.
 
 
