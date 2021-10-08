@@ -1,37 +1,62 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+'''Module for high-level interfacing with Fiber View Camera (FVC). Commands
+camera to take images, detects dots, and returns centroids. May be used
+either as a module called by other code, or standalone for single measurements
+at the command line.
+'''
+
+supported_cameras = {'SBIG': '../SBIG/',
+                     'simulator': None,
+                    }  # keys: camera label, values: paths to driver code or None
+default_camera = 'SBIG'
 import os
 import sys
-if "TEST_LOCATION" in os.environ and os.environ['TEST_LOCATION']=='Michigan':
-    basepath=os.environ['TEST_BASE_PATH']+'plate_control/'+os.environ['TEST_TAG']
-    sys.path.append(os.path.abspath(basepath+'/petal/'))
-    sys.path.append(os.path.abspath(basepath+'/posfidfvc/SBIG'))
-else:
-    sys.path.append(os.path.abspath('../petal/'))
-    sys.path.append(os.path.abspath('../posfidfvc/SBIG'))
+import argparse
+parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('-c', '--camera', type=str, default=default_camera,
+                    help=f'fiber view camera to use, valid options are {supported_cameras.keys()}') 
+parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
+parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
+inputs = parser.parse_args()
+
 import numpy as np
 import math
 import time
-import postransforms
-import posconstants as pc
+# import postransforms
+# import posconstants as pc
 import collections
 
 class FVCHandler(object):
-    """Provides a generic interface to the Fiber View Camera. Can support different
+    f'''Provides a generic interface to the Fiber View Camera. Can support different
     particular FVC implementations, providing a common set of functions to call
     from positioner control scripts.
-    
+ 
     The order of operations for transforming from CCD coordinates to output is:
         1. rotation
         2. scale
         3. translation
-    """
-    def __init__(self, fvc_type='FLI', platemaker_instrument='petal2',fvc_role='FVC', printfunc=print, save_sbig_fits=True, write_bias=False):
-        self.printfunc = printfunc # allows you to specify an alternate to print (useful for logging the output)
-        self.fvc_type = fvc_type # 'SBIG' or 'SBIG_Yale' or 'FLI' or 'simulator'
-        self.fvcproxy = None # may be auto-initialized later by the platemaker instrument setter
+
+    INPUTS:
+        camera ... string, identifying the camera hardware
+        printfunc ... function handle, to specify alternate to print (i.e. your logger)
+        save_images ... boolean, whether to save FITS files etc to disk
+        save_biases ... boolean, whether to save bias files to disk 
+    ''' 
+    def __init__(self,
+                 camera=inputs.camera,
+                 printfunc=print,
+                 save_images=inputs.save_images,
+                 save_biases=inputs.save_biases,
+                 ):
+        self.printfunc = printfunc 
+        assert camera in supported_cameras, f'unknown camera identifier {camera} (valid options are {supported_cameras.keys()}'
+        self.camera = camera
         self.min_energy = 0. #0.1 * .5 # this is the minimum allowed value for the product peak*fwhm for any given dot
         self.max_attempts = 5 # max number of times to retry an image measurement (if poor dot quality) before quitting hard
-        self.fvc_role=fvc_role
-        if self.fvc_type == 'SBIG':
+        driver_path = supported_cameras[self.camera]
+        sys.path.append(os.path.abspath(driver_path))
+        if self.camera == 'SBIG':
             import sbig_grab_cen
             self.sbig = sbig_grab_cen.SBIG_Grab_Cen(save_dir=pc.dirs['temp_files'],write_bias=write_bias)
             self.sbig.take_darks = False # typically we have the test stand in a dark enough enclosure, so False here saves time
