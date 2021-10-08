@@ -3,31 +3,31 @@ code for operating and testing fiber positioner robots
 
 # repo contents
 
-## bin
+## `bin`
 These are the high-level scripts that you run day-to-day.
 
-### analysis
+### `bin/analysis`
 Scripts for analyzing measured data. These should all be operable "offline", without any need for hardware, such that anyone with this GitHub repo can simply run the code.
 
-### control
+### `bin/control`
 Scripts for controlling the motors and camera to do physical tests.
 
 As of 2021-09-21, the resulting data should be automatically saved in the "data" folder. See comments below.
 
-## camera
-### fvchandler.py
+## `camera`
+### `camera/fvchandler.py`
 High-level interface to camera. Sends commands to the camera and interprets the resulting image by centroiding. 
 
 As of 2021-09-21 at LBNL, we are only using an SBIG STF-8300M camera. However `fvchandler.py` is intended to be flexible for using a different camera. In such cases, you would add new commands for the new driver in this module. Meanwhile, the pixel interpretation etc would be taken care of generically.
 
-### `SBIG`
+### `camera/SBIG`
 Low-level drivers for SBIG camera.
 
 See file `readme` in this directory for instructions on SBIG driver installation and some environmental variables that need to be set.
 
 As of 2021-09-21, low-level centroiding code is also in this folder (c.f. `sbig_grab_cen.py` etcetera). This is not ideal modularization. A more flexible architecture would be to make the centroiding more abstracted from the picture-taking. It's not essential right now, but would be useful in the future. In such a case, we would put the new, generic, centroiding module up one directory, next to `fvchandler.py`.
 
-## data
+## `data`
 As of 2021-09-21, all test data should be archived to GitHub in this folder.
 
 In general, store all data as simple .csv files. First row is column headers, then data in the subsequent rows. Use `astropy` module in general to produce these. All physical distances shall be in millimeters. All camera pixel distances are just pixels.
@@ -48,16 +48,12 @@ or
 
 `2021-09-21` for files you manually labeled (rarer)
 
-Hint: You can generate the first timestamp automatically with a command like:
-```
-from datetime import datetime, timezone
-prefix = datetime.now().astimezone().strftime('%Y%m%dT%H%M%S%z')
-```
+Hint: Use function "timestamp()" in the globals module to guarantee consistency.
 
-## manuals
+## `manuals`
 Store existing or external procedures, manuals, and other reference files etcetera here. However, new code documentation should be written in the `.md` format and version-controlled in GitHub (like this file). 
 
-## motors
+## `motors`
 Low-level control of the motors that drive the robots.
 
 As of 2021-09-21, the code is for electronics received from EPFL in 2020.
@@ -68,9 +64,11 @@ sudo adduser <username> dialout
 ~~~
 Then reboot. It is only necessary to do this setting one time for a given user.
 
-## other
+## `other`
 Stuff that isn't currently in use, for example old code that we may want to use parts of. Items here may be nonfunctional, and for information only.
 
+## `globals.py`
+A few common constants and helper functions, such as directories for saving files, and a single standard function for timestamping. We generally limit our usage of global variables, but this is useful for more "constant" common items.
 
 # github tips
 At LBNL test stand we may run as a common user `ldrd`. Therefore to commit code as yourself on github:
