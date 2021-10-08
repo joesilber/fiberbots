@@ -199,11 +199,14 @@ class FVCHandler(object):
         assert all([key in measured and key in expected for key in ref_keys]), f'missing ref_key {ref_key}'
         xy_diff = [[measured[key][i] - expected[key][i] for i in [0,1]] for key in ref_keys]
         if any(xy_diff):
-            xy_shift = np.median(xy_diff, axis=0)
-            measured_pos_xy -= xy_shift
-            measured_pos_xy = measured_pos_xy.tolist()
-            # if two or more ref dots that are widely enough spaced, consider applying rotation and scale corrections here
-        return measured_pos_xy
+            xy_shift = np.median(xy_diff, axis=0).tolist()
+            -= xy_shift
+            = measured_pos_xy.tolist()
+            # If we have two or more ref dots that are widely enough spaced,
+            # consider applying rotation and scale corrections here.
+        else:
+            corrected = measured
+        return corrected
 
     def sort_by_closeness(self, unknown_xy, expected_xy):
         """Sorts the list unknown_xy so that each point is at the same index
