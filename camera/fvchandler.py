@@ -5,26 +5,50 @@ camera to take images, detects dots, and returns centroids. May be used
 either as a module called by other code, or standalone for single measurements
 at the command line.
 '''
-
-supported_cameras = {'SBIG': '../SBIG/',
-                     'simulator': None,
-                    }  # keys: camera label, values: paths to driver code or None
-default_camera = 'SBIG'
 import os
 import sys
 import argparse
+sys.path.append(os.path.abspath('../'))
+import globals as gl
+
+# Supported cameras
+cameras = {
+    'SBIG': {
+        'driver_path': '../SBIG/',
+        'max_adu_counts': 2**16 - 1,
+        }, 
+    'simulator': {
+        'driver_path': None,
+        'max_adu_counts': None,
+        },
+    }  
+
+# Measurement default parameters
+defaults = {'camera': 'SBIG',
+            'exptime': 0.2,  # exposure time in sec
+            'fitbox': 5,  # ccd windowing for centroiding in pixels
+            'x0_px': 0.0,  # x translational offset in pixels
+            'y0_px': 0.0,  # y translational offset in pixels
+            'angle_deg': 0.0,  # camera mounting angle in deg
+            'mm_per_px': 1.0,  # plate scale, i.e. (mm at fibers) / (pixels at ccd)
+            }
+
+# Command line args for standalone mode, and defaults
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('-c', '--camera', type=str, default=default_camera,
-                    help=f'fiber view camera to use, valid options are {supported_cameras.keys()}') 
+                    help=f'fiber view camera to use, valid options are {cameras.keys()}') 
+parser.add_argument('-e', '--exptime', type=float, default=default_exposure_time, help='camera exposure time in seconds')
+parser.add_argument('-b', '--fitbox', type=int, default=default_fitbox, help='window size for centroiding in pixels')
+parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
 parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
 parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
+parser.add_argument('-se', '--sim_error2D', type=float, default=0.01, help='2D measurement error max for simulator')
+parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=0.05, help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
 
 import numpy as np
 import math
 import time
-# import postransforms
-# import posconstants as pc
 import collections
 
 class FVCHandler(object):
@@ -32,96 +56,50 @@ class FVCHandler(object):
     particular FVC implementations, providing a common set of functions to call
     from positioner control scripts.
  
-    The order of operations for transforming from CCD coordinates to output is:
+    The order of operations for transforming from CCD pixel coordinates to the
+    physical object plane (i.e. mm at the fiber tips) is:
+        1. translation
         1. rotation
-        2. scale
-        3. translation
+        3. scale
 
     INPUTS:
         camera ... string, identifying the camera hardware
-        printfunc ... function handle, to specify alternate to print (i.e. your logger)
+        take_darks ... boolean, whether to take dark exposures (shutter closed)
         save_images ... boolean, whether to save FITS files etc to disk
         save_biases ... boolean, whether to save bias files to disk 
+        printfunc ... function handle, to specify alternate to print (i.e. your logger)
     ''' 
     def __init__(self,
                  camera=inputs.camera,
-                 printfunc=print,
+                 take_darks=inputs.take_darks,
                  save_images=inputs.save_images,
                  save_biases=inputs.save_biases,
+                 printfunc=print,
                  ):
-        self.printfunc = printfunc 
-        assert camera in supported_cameras, f'unknown camera identifier {camera} (valid options are {supported_cameras.keys()}'
+        assert camera in cameras, f'unknown camera identifier {camera} (valid options are {cameras.keys()}'
         self.camera = camera
-        self.min_energy = 0. #0.1 * .5 # this is the minimum allowed value for the product peak*fwhm for any given dot
-        self.max_attempts = 5 # max number of times to retry an image measurement (if poor dot quality) before quitting hard
-        driver_path = supported_cameras[self.camera]
+        self.printfunc = printfunc 
+        self.min_energy = 0.  # 0.1 * .5 # this is the minimum allowed value for the product peak*fwhm for any given dot
+        self.max_attempts = 5  # max number of times to retry an image measurement (if poor dot quality) before quitting hard
+        self.exptime = inputs.exptime 
+        self.fitbox = inputs.fitbox
+        driver_path = cameras[self.camera]['driver_path']
         sys.path.append(os.path.abspath(driver_path))
         if self.camera == 'SBIG':
             import sbig_grab_cen
-            self.sbig = sbig_grab_cen.SBIG_Grab_Cen(save_dir=pc.dirs['temp_files'],write_bias=write_bias)
-            self.sbig.take_darks = False # typically we have the test stand in a dark enough enclosure, so False here saves time
-            self.sbig.write_fits = save_sbig_fits
-        elif self.fvc_type == 'FLI' or self.fvc_type == 'SBIG_Yale':   
-            self.platemaker_instrument = platemaker_instrument # this setter also initializes self.fvcproxy
-        elif self.fvc_type == 'simulator':
-            self.sim_err_max = 0.01 # 2D err max for simulator
-            self.sim_badmatch_frquency = 0.05 # how often the simulator returns [0,0], indicating a bad match
-            self.printfunc('FVCHandler is in simulator mode with max 2D errors of size ' + str(self.sim_err_max) + ', and bad match frequency of ' + str(self.sim_badmatch_frquency) + '.')
-        if 'SBIG' in self.fvc_type:
-            self.exposure_time = 0.20
-            self.max_counts = 2**16 - 1 # SBIC camera ADU max
-        else:
-            self.exposure_time = 2.5
-            self.max_counts = 2**16 - 1 # FLI camera ADU max
-        self.trans = postransforms.PosTransforms() # general transformer object -- does not look up specific positioner info, but fine for QS <--> global X,Y conversions
-        self.rotation = 0        # [deg] rotation angle from image plane to object plane
-        self._scale = 1.0        # scale factor from image plane to object plane
-        self.translation = [0,0] # translation of origin within the image plane
-        self.fitbox_mm = 0.7     # size of gaussian fitbox at the object plane (note minimum fiducial dot distance is 1.0 mm apart)
+            self.sbig = sbig_grab_cen.SBIG_Grab_Cen(save_dir=gl.dirs['temp'], write_bias=save_biases)
+            self.sbig.take_darks = take_darks 
+            self.sbig.write_fits = save_images
+            self.max_counts = cameras[self.camera]['max_adu_counts']
+         elif self.fvc_type == 'simulator':
+            self.sim_err_max = inputs.sim_error
+            self.sim_badmatch_frquency = inputs.sim_badmatchfreq 
+            self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_err_max} and bad match frequency of {self.sim_badmatch_frquency}.')
+        self.x0_px = defaults['x0_px']  # x translation of origin within the image plane
+        self.y0_px = defaults['y0_px']  # y translation of origin within the image plane
+        self.angle_deg = defaults['angle_deg']  # [deg] rotation angle from image plane to object plane
+        self.mm_per_px = defaults['mm_per_px']  # scale factor from image plane to object plane
 
-    @property
-    def scale(self):
-        '''Return the fiber view camera scale. (scale * image plane --> object plane)
-        '''
-        return self._scale
-
-    @scale.setter
-    def scale(self,scale):
-        '''Set the fiber view camera scale. (scale * image plane --> object plane)
-        '''
-        self._scale = scale
-        if 'SBIG' in self.fvc_type:
-            self.sbig.size_fitbox = 5 #int(np.ceil(self.fitbox_mm/2.3 / scale))
-
-    @property
-    def platemaker_instrument(self):
-        """Return name of the platemaker instrument.
-        """
-        return self.__platemaker_instrument
-
-    @platemaker_instrument.setter
-    def platemaker_instrument(self,name):
-        """Set the platemaker instrument.
-        """
-        from DOSlib.proxies import FVC
-        self.__platemaker_instrument = name
-        self.fvcproxy = FVC(self.platemaker_instrument, fvc_role =self.fvc_role)
-        self.printfunc('proxy FVC created for instrument %s' % self.fvcproxy.get('instrument'))
-
-    @property
-    def exposure_time(self):
-        """Time in seconds to expose.
-        """
-        return self.__exposure_time
-
-    @exposure_time.setter
-    def exposure_time(self,value):
-        self.__exposure_time = value
-        if self.fvc_type == 'SBIG':
-            self.sbig.exposure_time = value*1000 # sbig_grab_cen thinks in milliseconds
-        elif self.fvcproxy:
-            self.fvcproxy.send_fvc_command('set',exptime=value)
-        
     def measure_fvc_pixels(self, num_objects, attempt=1):
         """Gets a measurement from the fiber view camera of the centroid positions
         of all the dots of light landing on the CCD.
@@ -137,39 +115,24 @@ class FVCHandler(object):
         peaks = []
         fwhms = []
         imgfiles = []
-        if self.fvc_type == 'SBIG':
-            xy,peaks,fwhms,elapsed_time,imgfiles = self.sbig.grab(num_objects)
+        if self.camera == 'SBIG':
+            self.sbig.exposure_time = self.exptime * 1000  # sbig_grab_cen thinks in milliseconds
+            xy, peaks, fwhms, elapsed_time, imgfiles = self.sbig.grab(num_objects)
             peaks = [x/self.max_counts for x in peaks]
-        elif self.fvc_type == 'simulator':
-            xy = np.random.uniform(low=0,high=1000,size=(num_objects,2)).tolist()
-            peaks = np.random.uniform(low=0.25,high=1.0,size=num_objects).tolist()
-            fwhms = np.random.uniform(low=1.0,high=2.0,size=num_objects).tolist()
-            imgfiles = ['fake1.FITS','fake2.FITS']
-        else:
-            self.fvcproxy.send_fvc_command('make_targets',num_spots=num_objects)
-            centroids = self.fvcproxy.locate(send_centroids=True)
-            #if len(centroids) < num_objects:
-            #    print('number of spots found does not match number of targets, autotune and try again. ')
-            #    self.fvcproxy.calibrate_image()      
-            #    centroids = self.fvcproxy.locate(send_centroids=True)
-            if 'FAILED' in centroids:
-                self.printfunc('Failed to locate centroids using FVC.')
-            else:
-                for params in centroids.values():
-                    xy.append([params['x'],params['y']])
-                    peaks.append(self.normalize_mag(params['mag']))
-                    fwhms.append(params['fwhm'])
-        energies = [peaks[i]*fwhms[i] for i in range(len(peaks))]
+        elif self.camera == 'simulator':
+            xy = np.random.uniform(low=0, high=1000, size=(num_objects,2)).tolist()
+            peaks = np.random.uniform(low=0.25, high=1.0, size=num_objects).tolist()
+            fwhms = np.random.uniform(low=1.0, high=2.0, size=num_objects).tolist()
+            imgfiles = ['fake1.FITS', 'fake2.FITS']
+        energies = [peaks[i] * fwhms[i] for i in range(len(peaks))]
         if any([e < self.min_energy for e in energies]):
-            self.printfunc('Poor dot quality found on image attempt ' + str(attempt) + ' of ' + str(self.max_attempts) + '. Gaussian fit peak * energy was ' + str(min(energies)) + ' which is less than the minimum threshold (' + str(self.min_energy) + ')')
+            self.printfunc(f'Poor dot quality found on image attempt {attempt} of {self.max_attempts}. Gaussian fit peak * energy was {min(energies))} which is less than the minimum threshold {self.min_energy}')
             if attempt < self.max_attempts:
                 return self.measure_fvc_pixels(num_objects, attempt + 1)
             else:
-                if self.fvc_type == 'FLI':
-                    self.printfunc('Max attempts (' + str(self.max_attempts) + ') reached and still poor dot quality.')
-                else:
-                    sys.exit(0) # on the test stand, we definitely want to hard quit in this case
-        return xy,peaks,fwhms,imgfiles
+                self.printfunc(f'Max attempts {self.max_attempts} reached and still poor dot quality.')
+                sys.exit(0)
+        return xy, peaks, fwhms, imgfiles
 
     def measure_and_identify(self,expected_pos,expected_ref={}, pos_flags = {}):
         """Calls for an FVC measurement, and returns a list of measured centroids.
@@ -218,97 +181,43 @@ class FVCHandler(object):
         posids = list(measured_pos.keys())
         refids = list(measured_ref.keys())
         imgfiles = []
-        if self.fvcproxy:
-            expected_qs = [] # this is what will be provided to platemaker
-            fiber_ctr_flag = 4 # this enumeration is specific to Yale/FLI FVC interface
+        expected_pos_xy = [expected_pos[posid]['obsXY'] for posid in posids]
+        expected_ref_xy = [expected_ref[refid]['obsXY'] for refid in refids]
+        if self.fvc_type == 'simulator':
+            sim_error_magnitudes = np.random.uniform(-self.sim_err_max,self.sim_err_max,len(expected_pos_xy))
+            sim_error_angles = np.random.uniform(-np.pi,np.pi,len(expected_pos_xy))
+            sim_errors = sim_error_magnitudes * np.array([np.cos(sim_error_angles),np.sin(sim_error_angles)])
+            measured_pos_xy = (expected_pos_xy + np.transpose(sim_errors)).tolist()
             for posid in posids:
-                qs = self.trans.obsXY_to_QS(expected_pos[posid]['obsXY'])
-                if posid in pos_flags.keys():
-                    expected_qs.append({'id':posid, 'q':qs[0], 's':qs[1], 'flags':pos_flags[posid]})
-                else: #Assume it is good, old default behavior
-                    expected_qs.append({'id':posid, 'q':qs[0], 's':qs[1], 'flags':fiber_ctr_flag})
-            measured_qs = self.fvcproxy.measure(expected_qs)
-            if len(measured_qs) < len(expected_qs):
-                # for all the expected positioners that weren't included, generate a dummy dict
-                measured_posids = {d['id'] for d in measured_qs}
-                expected_posids = {d['id'] for d in expected_qs} #PARKER CHANGED set(expected_qs.keys())
-                # posids set difference etc
-                #dummy_qs_dict = {'q':0.0,'s':0.0, 'dq':0.0,'ds':0.0, 'flags':1, 'peak':0.0, 'mag':0.0, 'fwhm':0.0}
-                # make one for each posid and add to the list measured_qs
-                for id in expected_posids:
-                	if id not in measured_posids:
-                		#print(id)
-                		dummy_qs_dict = {'id':id,'q':0.0,'s':0.0, 'dq':0.0,'ds':0.0, 'flags':1, 'peak':0.0, 'mag':0.0, 'fwhm':0.0}
-
-                		#dummy_qs_dict.update({'id':id})
-                		#print(dummy_qs_dict)
-                		measured_qs.append(dummy_qs_dict)
-            elif len(measured_qs) > len(expected_qs):
-            	# remove dicts from measured_qs until correct number remaining
-            	# start with the unmatched ones (those with flag =0)
-            	for e in measured_qs:
-            		if len(measured_qs) > len(expected_qs) and e['flag']==0:
-            			measured_qs.remove(e) # check that this actually works and that the loop is still okay
-            	# if we still have too many measured_qs's
-            	if len(measured_qs) > len(expected_qs):	
-            	# remove the dimmest ones (this may not be the right approch ..)
-            	# we have to see from experience how to filter best. It may require to sort 
-            	# by variation of fwhm, or fwhm*mag, or something to know which to remove	
-            		pass
-            for qs_dict in measured_qs:
-                match_found = qs_dict['flags'] & 1 # when bit 0 is true, that means a match was found
-                if match_found:
-                    q = qs_dict['q']
-                    s = qs_dict['s'] #CHANGED BY PARKER 2/11/19
-                    dq = qs_dict['dq']
-                    ds = qs_dict['ds'] #ALSO CHANGED BY PARKER 2/1//19
+                if np.random.uniform() < self.sim_badmatch_frquency:
+                    obsXY = [0,0]
                 else:
-                    print(qs_dict)
-                    q = [0.0]
-                    s = [0.0] # intentionally an impossible-to-reach unique position, so that it's obvious we had a match failure but code continues
-                    dq =[0.0]
-                    ds = [0.0]
-                xy = self.trans.QS_to_obsXY([q,s])
-                posid = qs_dict['id']
-                measured_pos[posid] = {'obsXY':xy, 'peak':self.normalize_mag(qs_dict['mag']), 'fwhm':qs_dict['fwhm'], 'q':q, 's':s, 'dq':dq, 'ds':ds}
+                    obsXY = measured_pos_xy[posids.index(posid)]
+                measured_pos[posid] = {'obsXY':obsXY}
+            for refid in refids:
+                measured_ref[refid] = {'obsXY':expected_ref[refid]['obsXY']} # just copy the old vals
+            for item in [measured_pos,measured_ref]:
+                for key in item.keys():
+                    item[key]['peak'] = np.random.uniform(0,1)  
+                    item[key]['fwhm'] = np.random.uniform(0,1)
         else:
-            expected_pos_xy = [expected_pos[posid]['obsXY'] for posid in posids]
-            expected_ref_xy = [expected_ref[refid]['obsXY'] for refid in refids]
-            if self.fvc_type == 'simulator':
-                sim_error_magnitudes = np.random.uniform(-self.sim_err_max,self.sim_err_max,len(expected_pos_xy))
-                sim_error_angles = np.random.uniform(-np.pi,np.pi,len(expected_pos_xy))
-                sim_errors = sim_error_magnitudes * np.array([np.cos(sim_error_angles),np.sin(sim_error_angles)])
-                measured_pos_xy = (expected_pos_xy + np.transpose(sim_errors)).tolist()
-                for posid in posids:
-                    if np.random.uniform() < self.sim_badmatch_frquency:
-                        obsXY = [0,0]
-                    else:
-                        obsXY = measured_pos_xy[posids.index(posid)]
-                    measured_pos[posid] = {'obsXY':obsXY}
-                for refid in refids:
-                    measured_ref[refid] = {'obsXY':expected_ref[refid]['obsXY']} # just copy the old vals
-                for item in [measured_pos,measured_ref]:
-                    for key in item.keys():
-                        item[key]['peak'] = np.random.uniform(0,1)  
-                        item[key]['fwhm'] = np.random.uniform(0,1)
-            else:
-                expected_xy = expected_pos_xy + expected_ref_xy
-                num_objects = len(expected_xy)
-                unsorted_xy,unsorted_peaks,unsorted_fwhms,imgfiles = self.measure(num_objects)
-                measured_xy,sorted_idxs = self.sort_by_closeness(unsorted_xy, expected_xy)
-                sorted_posids_range = range(0,len(expected_pos_xy))
-                sorted_refids_range = range(len(expected_pos_xy),len(sorted_idxs))
-                measured_pos_xy = [measured_xy[i] for i in sorted_posids_range]
-                measured_ref_xy = [measured_xy[i] for i in sorted_refids_range]
-                measured_pos_xy = self.correct_using_ref(measured_pos_xy, measured_ref_xy, expected_ref_xy)
-                measured_xy[:sorted_posids_range.stop] = measured_pos_xy
-                sorted_peaks = np.array(unsorted_peaks)[sorted_idxs].tolist()
-                sorted_fwhms = np.array(unsorted_fwhms)[sorted_idxs].tolist()
-                for i in range(len(posids)):
-                    measured_pos[posids[i]] = {'obsXY':measured_xy[i], 'peak':sorted_peaks[i], 'fwhm':sorted_fwhms[i]}
-                for i in range(len(refids)):
-                    j = i + sorted_posids_range.stop
-                    measured_ref[refids[i]] = {'obsXY':measured_xy[j], 'peak':sorted_peaks[j], 'fwhm':sorted_fwhms[j]}
+            expected_xy = expected_pos_xy + expected_ref_xy
+            num_objects = len(expected_xy)
+            unsorted_xy,unsorted_peaks,unsorted_fwhms,imgfiles = self.measure(num_objects)
+            measured_xy,sorted_idxs = self.sort_by_closeness(unsorted_xy, expected_xy)
+            sorted_posids_range = range(0,len(expected_pos_xy))
+            sorted_refids_range = range(len(expected_pos_xy),len(sorted_idxs))
+            measured_pos_xy = [measured_xy[i] for i in sorted_posids_range]
+            measured_ref_xy = [measured_xy[i] for i in sorted_refids_range]
+            measured_pos_xy = self.correct_using_ref(measured_pos_xy, measured_ref_xy, expected_ref_xy)
+            measured_xy[:sorted_posids_range.stop] = measured_pos_xy
+            sorted_peaks = np.array(unsorted_peaks)[sorted_idxs].tolist()
+            sorted_fwhms = np.array(unsorted_fwhms)[sorted_idxs].tolist()
+            for i in range(len(posids)):
+                measured_pos[posids[i]] = {'obsXY':measured_xy[i], 'peak':sorted_peaks[i], 'fwhm':sorted_fwhms[i]}
+            for i in range(len(refids)):
+                j = i + sorted_posids_range.stop
+                measured_ref[refids[i]] = {'obsXY':measured_xy[j], 'peak':sorted_peaks[j], 'fwhm':sorted_fwhms[j]}
         return measured_pos, measured_ref, imgfiles
 
     def correct_using_ref(self, measured_pos_xy, measured_ref_xy, expected_ref_xy):
@@ -362,52 +271,21 @@ class FVCHandler(object):
         obsXY = self.fvcXY_to_obsXY(fvcXY)
         return obsXY,peaks,fwhms,imgfiles
 
-    def normalize_mag(self,value):
-        """Convert magnitude values coming from Rabinowitz code to a normalized
-        brightness value in the range 0.0 to 1.0.
-        25.0 - 2.5*log10(peak signal in ADU)
-        """
-        newval = 10**((25.0 - value)/2.5)
-        newval = newval / self.max_counts
-        newval = min(newval,1.0)
-        newval = max(newval,0.0)
-        return newval
-
     def fvcXY_to_obsXY(self,xy):
         """Convert a list of xy values in fvc pixel space to obsXY coordinates.
-        If there is no platemaker available, then it uses a simple rotation, scale,
-        translate sequence instead.
           INPUT:  [[x1,y1],[x2,y2],...]  fvcXY (pixels on the CCD)
           OUTPUT: [[x1,y1],[x2,y2],...]  obsXY (mm at the focal plane)
         """
         if xy != []:
-            if self.fvcproxy:
-                #Temporary hack, data passed in wrong format
-                if isinstance(xy[0],float):
-                    xy=[xy]
-                else:
-                    if isinstance(xy[0][0], list):
-                        xy_new = [[xy[0][0][i],xy[0][1][i]] for i in range(len(xy[0][0]))]
-                        xy = xy_new
-                #End of hack
-                spotids = [i for i in range(len(xy))]
-                fvcXY_dicts = [{'spotid':spotids[i],'x_pix':xy[i][0],'y_pix':xy[i][1]} for i in range(len(spotids))]
-                qs_dicts = self.fvcproxy.fvcxy_to_qs(fvcXY_dicts)
-                return_order = [spotids.index(d['spotid']) for d in qs_dicts]
-                qs = [[qs_dicts[i]['q'],qs_dicts[i]['s']] for i in return_order]
-                xy = [self.trans.QS_to_obsXY(qs[i]) for i in range(len(qs))]
-                #xy = np.transpose(xy).tolist()
-            else:
-                xy = pc.listify2d(xy)
-                xy_np = np.transpose(xy)
-                translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
-                translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
-                xy_np += [translation_x,translation_y]
-                xy_np *= self.scale
-                rot = FVCHandler.rotmat2D_deg(self.rotation)
-                xy_np = np.dot(rot, xy_np)
-                xy = np.transpose(xy_np).tolist() 
-                
+            xy = pc.listify2d(xy)
+            xy_np = np.transpose(xy)
+            translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
+            translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
+            xy_np += [translation_x,translation_y]
+            xy_np *= self.scale
+            rot = FVCHandler.rotmat2D_deg(self.rotation)
+            xy_np = np.dot(rot, xy_np)
+            xy = np.transpose(xy_np).tolist() 
         return xy
     
     def obsXY_to_fvcXY(self,xy):
@@ -418,39 +296,15 @@ class FVCHandler(object):
           OUTPUT: [[x1,y1],[x2,y2],...]  fvcXY (pixels on the CCD)
         """
         if xy != []:
-            if self.fvcproxy:
-                #Temporary hack, data passed in wrong format
-                #import pdb;pdb.set_trace()
-                if isinstance(xy[0], float):
-                    xy=[xy]
-                else:
-                    if isinstance(xy[0][0], list):
-                        xy_new = [[xy[0][0][i],xy[0][1][i]] for i in range(len(xy[0][0]))]
-                        xy = xy_new
-                #End of hack
-                spotids = [i for i in range(len(xy))]
-                qs = [self.trans.obsXY_to_QS(this_xy) for this_xy in xy]
-                qs_dicts = [{'spotid':spotids[i],'q':qs[i][0],'s':qs[i][1]} for i in range(len(spotids))]
-                print(qs_dicts)
-                fvcXY_dicts = self.fvcproxy.qs_to_fvcxy(qs_dicts) # fiducials are added in this process 
-                fvcXY_dicts_this=[]  # Kai: This is a temporary fix, a more efficient fix should be done in the future to save time
-                for d in fvcXY_dicts:
-                    if d['spotid'] in spotids:
-                        fvcXY_dicts_this.append(d)
-                return_order = [spotids.index(d['spotid']) for d in fvcXY_dicts_this]
-                xy = [[fvcXY_dicts_this[i]['x'],fvcXY_dicts_this[i]['y']] for i in return_order]
-            else:
-                
-                #import pdb; pdb.set_trace()
-                xy = pc.listify2d(xy)
-                xy_np = np.transpose(xy)
-                rot = FVCHandler.rotmat2D_deg(-self.rotation)
-                xy_np = np.dot(rot, xy_np)
-                xy_np /= self.scale
-                translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
-                translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
-                xy_np -= [translation_x,translation_y]
-                xy = np.transpose(xy_np).tolist()
+            xy = pc.listify2d(xy)
+            xy_np = np.transpose(xy)
+            rot = FVCHandler.rotmat2D_deg(-self.rotation)
+            xy_np = np.dot(rot, xy_np)
+            xy_np /= self.scale
+            translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
+            translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
+            xy_np -= [translation_x,translation_y]
+            xy = np.transpose(xy_np).tolist()
         return xy
     
     @staticmethod
