@@ -42,7 +42,7 @@ parser.add_argument('-b', '--fitbox', type=int, default=default_fitbox, help='wi
 parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
 parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
 parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
-parser.add_argument('-se', '--sim_error2D', type=float, default=0.01, help='2D measurement error max for simulator')
+parser.add_argument('-se', '--sim_errmax', type=float, default=0.01, help='measurement error max for simulator')
 parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=0.05, help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
 
@@ -92,9 +92,9 @@ class FVCHandler(object):
             self.sbig.write_fits = save_images
             self.max_counts = cameras[self.camera]['max_adu_counts']
          elif self.fvc_type == 'simulator':
-            self.sim_err_max = inputs.sim_error
-            self.sim_badmatch_frquency = inputs.sim_badmatchfreq 
-            self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_err_max} and bad match frequency of {self.sim_badmatch_frquency}.')
+            self.sim_errmax = inputs.sim_errmax
+            self.sim_badmatchfreq = inputs.sim_badmatchfreq 
+            self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_errmax} and bad match frequency of {self.sim_badmatchfreq}.')
         self.x0_px = defaults['x0_px']  # x translation of origin within the image plane
         self.y0_px = defaults['y0_px']  # y translation of origin within the image plane
         self.angle_deg = defaults['angle_deg']  # [deg] rotation angle from image plane to object plane
@@ -104,12 +104,14 @@ class FVCHandler(object):
         """Gets a measurement from the fiber view camera of the centroid positions
         of all the dots of light landing on the CCD.
         
-        INPUTS:  num_objects  ... integer, number of dots FVC should look for
+        INPUTS:  num_objects ... integer, number of dots FVC should look for
         
-        OUTPUT:  xy           ... list of measured dot positions in FVC pixel coordinates, of the form [[x1,y1],[x2,y2],...]
-                 peaks        ... list of the peak brightness values for each dot, in the same order
-                 fwhms        ... list of the fwhm for each dot, in the same order
-                 imgfiles     ... list of image filenames that were produced
+        OUTPUT:  xy          ... list of measured dot (x,y) positions in FVC pixel coordinates
+                 peaks       ... list of the peak brightness values for each dot
+                 fwhms       ... list of the fwhm for each dot
+                 imgfiles    ... list of image filenames that were produced
+
+        Lists xy, peaks, and fwhms are all in matching order.
         """
         xy = []
         peaks = []
@@ -134,99 +136,70 @@ class FVCHandler(object):
                 sys.exit(0)
         return xy, peaks, fwhms, imgfiles
 
-    def measure_and_identify(self,expected_pos,expected_ref={}, pos_flags = {}):
-        """Calls for an FVC measurement, and returns a list of measured centroids.
-        The centroids are in order according to their closeness to the list of
-        expected xy values.
+    def measure_and_identify(self, expected, ref_keys=None):
+        '''Calls for an FVC measurement, and returns a list of measured centroids.
 
-        If the expected xy are unknown, then use the measure method instead.
+        The centroids are identified according to their closeness to the argued 
+        'expected' xy values.
 
-        INPUT:  expected_pos ... dict of dicts giving expected positioner fiber locations
-                expected_ref ... dict of dicts giving expected fiducial dot positions, not needed when using fvcproxy
-                pos_flags    ... (optional) dict keyed by positioner indicating which flag as indicated below that a
-                                 positioner should receive going to the FLI camera with fvcproxy
+        All coordinates are at the object plane (not the CCD).
+
+        If expected positions are not yet known, then you can first use the measure()
+        method alone and make your initial identifications of dots expected.
+
+        INPUT:  expected ... dict with keys = unique identifiers for each dot to be
+                             expected in the image, and values = (x,y) pairs, giving
+                             location where dot is expected (in object plane coords,
+                             i.e. physical mm at the fiber tips).
+
+                ref_keys ... set of identifier keys, saying which if any of the
+                             expected positions are reference fiducial dots
                 
-                The expected_pos and expected ref dot dicts should have primary keys
-                be the posid or sub-fidid (of each dot), and the sub-keys should include
-                'obsXY'. So that this function can access the expected positions with
-                calls like:
-                    expected_pos['M00001']['obsXY']
-                    expected_ref['F001.0']['obsXY']
+        OUTPUT: measured ... dict of (x,y) measured dot locations
+                peaks    ... dict of peak brightnesses of measured dots
+                fwhms    ... dict of full-width half-maxes of measured dots
+                imgfiles ... list of image file names (if any) returned by camera 
 
-                flags    2 : pinhole center 
-                         4 : fiber center 
-                         8 : fiducial center 
-                        32 : bad fiber or fiducial 
-
-        OUTPUT: measured_pos ... list of measured positioner fiber locations
-                measured_ref ... list of measured fiducial dot positions
-                imgfiles     ... list of image file names (if any) that were given back by fvc
-                
-                The measured_pos and measured_ref returned are similarly shaped
-                dicts of dicts. They are ordered dicts, so that they will preserve
-                any ordering of the expected_pos and expected_ref, if applicable.
-                
-                They include the sub-keys:
-                    'obsXY' ... measured [x,y] in the observer coordinate system (mm at the focal plane)
-                    'peak'  ... peak brightness of the measured dot
-                    'fwhm'  ... fwhm of the measured dot
-        
-        The argument 'expected_ref' is currently (as of May 26, 2017) ignored when
-        operating in FLI mode. This is because the platemaker / FVC implementations
-        do not currently support providing this information. The return value for
-        measured_ref in this mode is an empty dict.
-        """
-        measured_pos = collections.OrderedDict.fromkeys(expected_pos.keys())
-        measured_ref = collections.OrderedDict.fromkeys(expected_ref.keys())
-        posids = list(measured_pos.keys())
-        refids = list(measured_ref.keys())
+        Output dicts will be keyed by same identifiers as the input dict 'expected'.
+        '''
+        ref_keys = set() if not ref_keys else set(ref_keys)
+        posids = set(expected) - ref_keys 
         imgfiles = []
-        expected_pos_xy = [expected_pos[posid]['obsXY'] for posid in posids]
-        expected_ref_xy = [expected_ref[refid]['obsXY'] for refid in refids]
-        if self.fvc_type == 'simulator':
-            sim_error_magnitudes = np.random.uniform(-self.sim_err_max,self.sim_err_max,len(expected_pos_xy))
-            sim_error_angles = np.random.uniform(-np.pi,np.pi,len(expected_pos_xy))
-            sim_errors = sim_error_magnitudes * np.array([np.cos(sim_error_angles),np.sin(sim_error_angles)])
-            measured_pos_xy = (expected_pos_xy + np.transpose(sim_errors)).tolist()
-            for posid in posids:
-                if np.random.uniform() < self.sim_badmatch_frquency:
-                    obsXY = [0,0]
+        ordered_keys = list(expected.keys())
+        expected_xy = [expected[key] for key in ordered_keys]
+        num_objects = len(expected_xy)
+        unsorted_xy, unsorted_peaks, unsorted_fwhms, imgfiles = self.measure(num_objects)
+        if self.camera == 'simulator': # redo simulated measurements to be near the expected_xy
+            jumbled_xy = expected_xy.copy()
+            random.shuffle(jumbled_xy)
+            for i, xy in enumerate(jumbled_xy):
+                if random.uniform() < self.sim_badmatchfreq:
+                    unsorted_xy[i] = [0, 0]
                 else:
-                    obsXY = measured_pos_xy[posids.index(posid)]
-                measured_pos[posid] = {'obsXY':obsXY}
-            for refid in refids:
-                measured_ref[refid] = {'obsXY':expected_ref[refid]['obsXY']} # just copy the old vals
-            for item in [measured_pos,measured_ref]:
-                for key in item.keys():
-                    item[key]['peak'] = np.random.uniform(0,1)  
-                    item[key]['fwhm'] = np.random.uniform(0,1)
-        else:
-            expected_xy = expected_pos_xy + expected_ref_xy
-            num_objects = len(expected_xy)
-            unsorted_xy,unsorted_peaks,unsorted_fwhms,imgfiles = self.measure(num_objects)
-            measured_xy,sorted_idxs = self.sort_by_closeness(unsorted_xy, expected_xy)
-            sorted_posids_range = range(0,len(expected_pos_xy))
-            sorted_refids_range = range(len(expected_pos_xy),len(sorted_idxs))
-            measured_pos_xy = [measured_xy[i] for i in sorted_posids_range]
-            measured_ref_xy = [measured_xy[i] for i in sorted_refids_range]
-            measured_pos_xy = self.correct_using_ref(measured_pos_xy, measured_ref_xy, expected_ref_xy)
-            measured_xy[:sorted_posids_range.stop] = measured_pos_xy
-            sorted_peaks = np.array(unsorted_peaks)[sorted_idxs].tolist()
-            sorted_fwhms = np.array(unsorted_fwhms)[sorted_idxs].tolist()
-            for i in range(len(posids)):
-                measured_pos[posids[i]] = {'obsXY':measured_xy[i], 'peak':sorted_peaks[i], 'fwhm':sorted_fwhms[i]}
-            for i in range(len(refids)):
-                j = i + sorted_posids_range.stop
-                measured_ref[refids[i]] = {'obsXY':measured_xy[j], 'peak':sorted_peaks[j], 'fwhm':sorted_fwhms[j]}
-        return measured_pos, measured_ref, imgfiles
+                    unsorted_xy[i] = [xy[j] + random.uniform(-self.sim_errmax, self.sim_errmax) for j in [0,1]] 
+        sorted_xyraw, sorted_idxs = self.sort_by_closeness(unsorted_xy, expected_xy)
+        sorted_peaks = [unsorted_peaks[i] for i in sorted_idxs]
+        sorted_fwhms = [unsorted_fwhms[i] for i in sorted_idxs]
+        xyraw = {ordered_keys[i]: sorted_xyraw[i] for i in range(len(sorted_xyraw))}
+        peaks = {ordered_keys[i]: sorted_peaks[i] for i in range(len(sorted_peaks))}
+        fwhms = {ordered_keys[i]: sorted_fwhms[i] for i in range(len(sorted_fwhms))}
+        measured = self.correct_using_ref(xyraw, expected, ref_keys)
+        return measured, peaks, fwhms, imgfiles
 
-    def correct_using_ref(self, measured_pos_xy, measured_ref_xy, expected_ref_xy):
-        """Evaluates the correction that transforms measured_ref_xy into expected_ref_xy,
-        and then applies this to the measured_xy values.
-        """
-        if len(measured_ref_xy) > 0:
-            xy_diff = np.array(measured_ref_xy) - np.array(expected_ref_xy)
-            xy_shift = np.median(xy_diff,axis=0)
+    def correct_using_ref(self, measured, expected, ref_keys):
+        '''Calculates a correction to transform measured reference dots into expected,
+        and then applies this to all the measured xy values.
+
+        INPUTS:  measured ... dict with keys = identifiers, values = [x,y] pairs
+                 expected ... dict with keys = identifiers, values = [x,y] pairs
+                 ref_keys ... set of keys indicating which dots are reference fiducials
+
+        OUTPUT:  dict with keys = identifiers, values = [x,y] pairs
+        '''
+        assert all([key in measured and key in expected for key in ref_keys]), f'missing ref_key {ref_key}'
+        xy_diff = [[measured[key][i] - expected[key][i] for i in [0,1]] for key in ref_keys]
+        if any(xy_diff):
+            xy_shift = np.median(xy_diff, axis=0)
             measured_pos_xy -= xy_shift
             measured_pos_xy = measured_pos_xy.tolist()
             # if two or more ref dots that are widely enough spaced, consider applying rotation and scale corrections here
@@ -237,7 +210,7 @@ class FVCHandler(object):
         as its closest-distance match in the list expected_xy.
         """
         if len(unknown_xy) != len(expected_xy):
-            self.printfunc('warning: unknown_xy length = ' + str(len(unknown_xy)) + ' but expected_xy length = ' + str(len(expected_xy)))
+            self.printfunc(f'unknown_xy length {len(unknown_xy)} != expected_xy length {len(expected_xy)}')
         xy = [None]*len(expected_xy)
         sorted_idxs = [None]*len(expected_xy)
         dist = []
@@ -256,67 +229,59 @@ class FVCHandler(object):
         return xy, sorted_idxs
 
     def measure(self, num_objects=1):
-        """Calls for an FVC image capture, applies simple transformations to get the
-        centroids into the units and orientation of the object plane, and returns
-        the centroids.
-        
-        This method short-circuits platemaker, operating directly on dots from the fiber
-        view camera in a more simplistic manner. The general idea is that this is not a
-        replacement for the accuracy performance of platemaker. Rather it is used for
-        bootstrapping our knowledge of a new setup to a good-enough point where we can
-        start to use platemaker.
-            num_objects     ... number of dots to look for in the captured image
-        """
-        fvcXY,peaks,fwhms,imgfiles = self.measure_fvc_pixels(num_objects)
-        obsXY = self.fvcXY_to_obsXY(fvcXY)
-        return obsXY,peaks,fwhms,imgfiles
+        '''Calls for an FVC image capture, transforms the centroids from pixels into
+        the units and orientation of the object plane.
 
-    def fvcXY_to_obsXY(self,xy):
-        """Convert a list of xy values in fvc pixel space to obsXY coordinates.
-          INPUT:  [[x1,y1],[x2,y2],...]  fvcXY (pixels on the CCD)
-          OUTPUT: [[x1,y1],[x2,y2],...]  obsXY (mm at the focal plane)
-        """
-        if xy != []:
-            xy = pc.listify2d(xy)
-            xy_np = np.transpose(xy)
-            translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
-            translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
-            xy_np += [translation_x,translation_y]
-            xy_np *= self.scale
-            rot = FVCHandler.rotmat2D_deg(self.rotation)
-            xy_np = np.dot(rot, xy_np)
-            xy = np.transpose(xy_np).tolist() 
-        return xy
+        INPUTS:  num_objects ... number of dots to look for in the captured image
+
+        Outputs are lists of:
+            (x,y) centroids
+            peak brightness values
+            full-width half-maxes
+            paths to any image files 
+        '''
+        xy_px, peaks, fwhms, imgfiles = self.measure_fvc_pixels(num_objects)
+        xy_mm = self.fvc_to_obs(xy_px)
+        return xy_mm, peaks, fwhms, imgfiles
+
+    def fvc_to_obs(self, xy_px):
+        '''Convert a list or tuple of xy values in fvc pixel space to physical
+        coordinates, as seen by an observer looking at the fiber tips.
+
+        INPUT:  xy ... list or tuple of (x,y) coord in pixels on the CCD
+        OUTPUT: list of (x,y) coord in mm at the focal plane
+        '''
+        x = [xy[0] + self.x0_px for xy in xy_px]
+        y = [xy[1] + self.y0_px for xy in xy_px]
+        rot = FVCHandler.rotmat2D_deg(self.angle_deg)
+        xy_rotated = np.dot(rot, [x,y])
+        xy_scaled = xy_rotated * self.mm_per_px
+        xy_mm = np.transpose(xy_scaled).tolist()
+        return xy_mm
     
-    def obsXY_to_fvcXY(self,xy):
-        """Convert a list of xy values in obsXY coordinates to fvc pixel space.
-        If there is no platemaker available, then it uses a simple rotation, scale,
-        translate sequence instead.
-          INPUT:  [[x1,y1],[x2,y2],...]  obsXY (mm at the focal plane)
-          OUTPUT: [[x1,y1],[x2,y2],...]  fvcXY (pixels on the CCD)
-        """
-        if xy != []:
-            xy = pc.listify2d(xy)
-            xy_np = np.transpose(xy)
-            rot = FVCHandler.rotmat2D_deg(-self.rotation)
-            xy_np = np.dot(rot, xy_np)
-            xy_np /= self.scale
-            translation_x = self.translation[0] * np.ones(np.shape(xy_np)[1])
-            translation_y = self.translation[1] * np.ones(np.shape(xy_np)[1])
-            xy_np -= [translation_x,translation_y]
-            xy = np.transpose(xy_np).tolist()
-        return xy
+    def obs_to_fvc(self, xy_mm):
+        '''Convert a list or tuple of xy values in obsXY coordinates to fvc pixel space.
+
+        INPUT:  xy ... list or tuple of (x,y) coord in mm at the focal plane
+        OUTPUT: list of (x,y) coord in pixels on the CCD
+        '''
+        xy_np = np.transpose(xy_mm)
+        xy_scaled = xy_np / self.mm_per_px
+        rot = FVCHandler.rotmat2D_deg(-self.angle_deg)
+        xy_rotated = np.dot(rot, xy_scaled)
+        xy_translated = xy_rotated - [self.x0_mm, self.y0_mm]
+        xy_px = np.transpose(xy_translated).tolist()
+        return xy_px
     
     @staticmethod
     def rotmat2D_deg(angle):
         """Return the 2d rotation matrix for an angle given in degrees."""
-        angle *= pc.rad_per_deg
+        angle *= gl.rad_per_deg
         return np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
 
 if __name__ == '__main__':
-    #f = FVCHandler(fvc_type='FLI',platemaker_instrument='petal1',fvc_role='FVC2')
     f = FVCHandler(fvc_type='SBIG')
-    n_objects =1 #74 
+    n_objects = 1 
     n_repeats = 1
     f.min_energy = -np.Inf
     xy = []
