@@ -8,7 +8,7 @@ at the command line.
 import os
 import sys
 import argparse
-sys.path.append(os.path.abspath('../'))
+sys.path.append(os.path.abspath('../general'))
 import globals as gl
 
 # Supported cameras
@@ -45,6 +45,7 @@ parser.add_argument('-b', '--fitbox', type=int, default=default['fitbox'], help=
 parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
 parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
 parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
+parser.add_argument('-p', '--plot', action='store_true', help='plot measured centroids')
 parser.add_argument('-se', '--sim_errmax', type=float, default=defaults['sim_errmax'], help='measurement error max for simulator')
 parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=defaults['sim_badmatchfreq'], help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
@@ -282,79 +283,70 @@ class FVCHandler(object):
         return np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
 
 if __name__ == '__main__':
+    start_stamp = gl.timestamp()
+    import simple_logger
+    path_prefix = os.path.append(gl.dirs['temp'], f'fvchandler_{start_stamp}')
+    log_path = f'{path_prefix}.log'
+    logger = simple_logger.start_logger(log_path)
+    logger.info(f'Beginning fvchandler stand-alone measurement run')
+    logger.info(f'Log path: {log_path}')
+    logger.info(f'Inputs: {inputs}')
     params = defaults.copy()
     for key in ['camera', 'exptime', 'fitbox', 'sim_errmax', 'sim_badmatchfreq']:
         params[key] = getattr(inputs, key)
+    logger.info('Initializing fvchandler with parameters: {params}')
     f = FVCHandler(params=params,
                    take_darks=inputs.take_darks,
                    save_images=inputs.save_images,
                    save_biases=inputs.save_biases,
+                   printfunc=logger.info,
                   ) 
     f.min_energy = -np.Inf  # suppress checks on dot quality here, since standalone mode often for setup
     xy = []
     peaks = []
     fwhms = []
     energies = []
-    print(f'Taking {inputs.num_repeats} measurements')
     start_time = time.time()
-    for i in range(n_repeats):
-        these_xy,these_peaks,these_fwhms,imgfiles = f.measure(n_objects)
+    for i in range(inputs.num_repeats):
+        meas_name = f'measurement {i+1} of {inputs.num_repeats}'
+        logger.info(f'Beginning {meas_name}')
+        these_xy, these_peaks, these_fwhms, imgfiles = f.measure(inputs.num_dots)
+        if imgfiles:
+            logger.info('Images for {meas_name} stored at {imgfiles}')
         xy.append(these_xy)
         peaks.append(these_peaks)
         fwhms.append(these_fwhms)
         energies.append([these_peaks[i]*these_fwhms[i] for i in range(len(these_peaks))])
-        x=[these_xy[i][0] for i in range(len(these_xy))]
-        y=[these_xy[i][1] for i in range(len(these_xy))]
-        import tkinter.messagebox
-        plot = tkinter.messagebox.askyesno(title='Plot the measurements?',message='Plot the measurements?')
-        metro = tkinter.messagebox.askyesno(title='Plot the metology data?',message='Plot the metrology data?')
-
-        if plot:
-            import matplotlib.pyplot as plt
-            import tkinter
-            import tkinter.filedialog
-            import tkinter.simpledialog
-            from tkinter import *
-            from astropy.table import Table
-
-            cm = plt.cm.get_cmap('RdYlBu')
-            colors=these_peaks
-            sc=plt.scatter(x, y, c=colors, alpha=0.7,vmin=min(colors), vmax=max(colors), s=35, cmap=cm)
-            plt.colorbar(sc)
-            #plt.plot(x,y,'bx',label="Measurements")
-
-            if metro:
-                file_metro=tkinter.filedialog.askopenfilename(initialdir=pc.dirs['hwsetups'], filetypes=(("CSV file","*.csv"),("All Files","*")), title='Select Metrology Data')
-                fiducials= Table.read(file_metro,format='ascii.csv',header_start=0,data_start=1)
-                metro_X_file_arr,metro_Y_file_arr=[],[]
-                for row in fiducials:
-                    metro_X_file_arr.append(row['X'])
-                    metro_Y_file_arr.append(row['Y'])
-                plt.plot(metro_X_file_arr,metro_Y_file_arr,'rd',label="Fiducials")
-            plt.legend(loc='upper left')
-            plt.xlabel('X')
-            plt.ylabel('Y')
-            plt.show()
-
-        print('ndots: ' + str(len(xy[i])))
-        print('')
-        print('measured xy positions:')
-        print(xy[i])
-        print('')
-        print('measured peak brightnesses:')
-        print(peaks[i])
-        print('dimmest (scale 0 to 1): ' + str(min(peaks[i])))
-        print('brightest (scale 0 to 1): ' + str(max(peaks[i])))
-        print('')
-        print('measured full width half maxes:')
-        print(fwhms[i])
-        print('dimmest (scale 0 to 1): ' + str(min(fwhms[i])))
-        print('brightest (scale 0 to 1): ' + str(max(fwhms[i])))
-        print('')
-        print('measured energies = peaks * fwhms:')
-        print(energies[i])
-        print('dimmest (scale 0 to 1): ' + str(min(energies[i])))
-        print('brightest (scale 0 to 1): ' + str(max(energies[i])))
-        print('')
+        stats = f'Measurement {i + 1} of {inputs.num_repeats}:'
+        stats += f'\nnumber of dots: {len(these_xy)}'
+        stats += f'\nxy positions: {these_xy}')
+        stats += f'\npeak brightnesses: {these_peaks}')
+        stats += f'\ndimmest: {min(these_peaks)}')
+        stats += f'\nbrightest: {max(these_peaks)}')
+        stats += f'\nfull-width half-maxes: {these_fwhms}')
+        stats += f'\nnarrowest: {min(these_fwhms)}')
+        stats += f'\nwidest: {max(these_fwhms)}')
+        stats += f'\nenergies = peaks * fwhms: {energies[-1]')
+        stats += f'\nlowest: {min(energies[-i])}')
+        stats += f'\nhighest: {max(energies[-i])}')
+        logger.info(stats)
+    if inputs.plot:
+        import matplotlib.pyplot as plt
+        plt.ioff()
+        fig = plt.figure(figsize=(8.0, 6.0, dpi=150) 
+        cm = plt.cm.get_cmap('RdYlBu')
+        colors = these_peaks
+        sc = plt.scatter(x, y, c=colors, alpha=0.7, vmin=min(colors), vmax=max(colors), s=35, cmap=cm)
+        plt.colorbar(sc)
+        plt.legend(loc='upper left')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title(f'fvc measurements {start_stamp}')
+        fig.tight_layout()
+        plot_path = f'{path_prefix}.png'
+        plt.savefig(plot_path)
+        plt.close(fig)
+        logger.info(f'Plot saved to {plot_path}')
     total_time = time.time() - start_time
-    print('total time = ' + str(total_time) + ' (' + str(total_time/n_repeats) + ' per image)')
+    logger.info(f'Run completed in {total_time:.1f} sec ({total_time/inputs.num_repeats}) per image)')
+
