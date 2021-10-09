@@ -2,6 +2,7 @@
 '''Constants, environment variables, and convenience methods.'''
 import os
 import math
+import numpy as np
 from datetime import datetime
 
 # Directory locations

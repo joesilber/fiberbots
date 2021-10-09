@@ -22,7 +22,7 @@ cameras = {
         'driver_path': './SBIG/',
         'max_adu_counts': 2**16 - 1,
         }, 
-    'simulator': {
+    'sim': {
         'driver_path': None,
         'max_adu_counts': None,
         },
@@ -83,14 +83,14 @@ class FVCHandler():
         self.exptime = params['exptime']
         self.fitbox = params['fitbox']
         driver_path = cameras[self.camera]['driver_path']
-        sys.path.append(os.path.abspath(driver_path))
+        sys.path.append(driver_path)
         if self.camera == 'SBIG':
             import sbig_grab_cen
             self.sbig = sbig_grab_cen.SBIG_Grab_Cen(save_dir=gl.dirs['temp'], write_bias=save_biases)
             self.sbig.take_darks = take_darks 
             self.sbig.write_fits = save_images
             self.max_counts = cameras[self.camera]['max_adu_counts']
-        elif self.camera == 'simulator':
+        elif self.camera == 'sim':
             self.sim_errmax = params['sim_errmax']
             self.sim_badmatchfreq = params['sim_badmatchfreq']
             self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_errmax} and bad match frequency of {self.sim_badmatchfreq}.')
@@ -132,7 +132,7 @@ class FVCHandler():
         expected_xy = [expected[key] for key in ordered_keys]
         num_objects = len(expected_xy)
         unsorted_xy, unsorted_peaks, unsorted_fwhms, imgfiles = self.measure(num_objects)
-        if self.camera == 'simulator': # redo simulated measurements to be near the expected_xy
+        if self.camera == 'sim': # redo simulated measurements to be near the expected_xy
             jumbled_xy = expected_xy.copy()
             random.shuffle(jumbled_xy)
             for i, xy in enumerate(jumbled_xy):
@@ -186,7 +186,7 @@ class FVCHandler():
             self.sbig.exposure_time = self.exptime * 1000  # sbig_grab_cen thinks in milliseconds
             xy, peaks, fwhms, elapsed_time, imgfiles = self.sbig.grab(num_objects)
             peaks = [x/self.max_counts for x in peaks]
-        elif self.camera == 'simulator':
+        elif self.camera == 'sim':
             xy = np.random.uniform(low=0, high=1000, size=(num_objects,2)).tolist()
             peaks = np.random.uniform(low=0.25, high=1.0, size=num_objects).tolist()
             fwhms = np.random.uniform(low=1.0, high=2.0, size=num_objects).tolist()
@@ -296,7 +296,7 @@ if __name__ == '__main__':
     params = defaults.copy()
     for key in ['camera', 'exptime', 'fitbox', 'sim_errmax', 'sim_badmatchfreq']:
         params[key] = getattr(inputs, key)
-    logger.info('Initializing fvchandler with parameters: {params}')
+    logger.info(f'Initializing fvchandler with parameters: {params}')
     f = FVCHandler(params=params,
                    take_darks=inputs.take_darks,
                    save_images=inputs.save_images,
@@ -315,18 +315,19 @@ if __name__ == '__main__':
             logger.info('Images for {meas_name} stored at {imgfiles}')
         xy.append(these_xy)
         energies = [these_peaks[i]*these_fwhms[i] for i in range(len(these_peaks))]
-        stats = f'Measurement {i + 1} of {inputs.num_repeats}:'
-        stats += f'\nnumber of dots: {len(these_xy)}'
-        stats += f'\nxy positions: {these_xy}'
-        stats += f'\npeak brightnesses: {these_peaks}'
-        stats += f'\ndimmest: {min(these_peaks)}'
-        stats += f'\nbrightest: {max(these_peaks)}'
-        stats += f'\nfull-width half-maxes: {these_fwhms}'
-        stats += f'\nnarrowest: {min(these_fwhms)}'
-        stats += f'\nwidest: {max(these_fwhms)}'
-        stats += f'\nenergies = peaks * fwhms: {energies}'
-        stats += f'\nlowest: {min(energies)}'
-        stats += f'\nhighest: {max(energies)}'
+        statline = lambda name, value: f'\n{name:<26}... ' + (f'{value:.4f}' if gl.is_float(value) else f'{value}')
+        stats = f'Measurement {i + 1} of {inputs.num_repeats}...'
+        stats += statline('number of dots', len(these_xy))
+        stats += statline('xy positions', these_xy)
+        stats += statline('peak brightnesses', these_peaks)
+        stats += statline('dimmest', min(these_peaks))
+        stats += statline('brightest', max(these_peaks))
+        stats += statline('full-width half-maxes', these_fwhms)
+        stats += statline('narrowest', min(these_fwhms))
+        stats += statline('widest', max(these_fwhms))
+        stats += statline('energies = peaks * fwhms', energies)
+        stats += statline('lowest', min(energies))
+        stats += statline('highest', max(energies))
         logger.info(stats)
     if inputs.plot:
         import matplotlib.pyplot as plt
@@ -334,6 +335,8 @@ if __name__ == '__main__':
         fig = plt.figure(figsize=(8.0, 6.0), dpi=150) 
         cm = plt.cm.get_cmap('RdYlBu')
         colors = these_peaks
+        x = [this[0] for this in xy]
+        y = [this[1] for this in xy]
         sc = plt.scatter(x, y, c=colors, alpha=0.7, vmin=min(colors), vmax=max(colors), s=35, cmap=cm)
         plt.colorbar(sc)
         plt.legend(loc='upper left')
