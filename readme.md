@@ -50,6 +50,15 @@ or
 
 Hint: Use function "timestamp()" in the globals module to guarantee consistency.
 
+## `general`
+Used across multiple categories of scripts and modules.
+
+###`globals.py`
+A few common constants and helper functions, such as directories for saving files, and a single standard function for timestamping. We generally limit our usage of global variables, but this is useful for more "constant" common items.
+
+### `simple_logger.py`
+Common module for logging events in scripts etc.
+
 ## `manuals`
 Store existing or external procedures, manuals, and other reference files etcetera here. However, new code documentation should be written in the `.md` format and version-controlled in GitHub (like this file). 
 
@@ -64,11 +73,8 @@ sudo adduser <username> dialout
 ~~~
 Then reboot. It is only necessary to do this setting one time for a given user.
 
-## `other`
+## `unused`
 Stuff that isn't currently in use, for example old code that we may want to use parts of. Items here may be nonfunctional, and for information only.
-
-## `globals.py`
-A few common constants and helper functions, such as directories for saving files, and a single standard function for timestamping. We generally limit our usage of global variables, but this is useful for more "constant" common items.
 
 # github tips
 At LBNL test stand we may run as a common user `ldrd`. Therefore to commit code as yourself on github:
