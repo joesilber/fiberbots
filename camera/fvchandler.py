@@ -27,6 +27,8 @@ cameras = {
 defaults = {'camera': 'SBIG',
             'exptime': 0.2,  # exposure time in sec
             'fitbox': 5,  # ccd windowing for centroiding in pixels
+            'sim_errmax': 0.01,  # simulated measurement noise in mm
+            'sim_badmatchfreq': 0.05,  # simulated frequency of bad spot matches
             'x0_px': 0.0,  # x translational offset in pixels
             'y0_px': 0.0,  # y translational offset in pixels
             'angle_deg': 0.0,  # camera mounting angle in deg
@@ -35,21 +37,21 @@ defaults = {'camera': 'SBIG',
 
 # Command line args for standalone mode, and defaults
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('-c', '--camera', type=str, default=default_camera,
-                    help=f'fiber view camera to use, valid options are {cameras.keys()}') 
-parser.add_argument('-e', '--exptime', type=float, default=default_exposure_time, help='camera exposure time in seconds')
-parser.add_argument('-b', '--fitbox', type=int, default=default_fitbox, help='window size for centroiding in pixels')
+parser.add_argument('-c', '--camera', type=str, default=default_camera, help=f'fiber view camera to use, valid options are {cameras.keys()}') 
+parser.add_argument('-n', '--num_dots', type=int, default=1, help=f'number of dots to centroid')
+parser.add_argument('-r', '--num_repeats', type=int, default=1, help=f'number of times to repeat the measurement')
+parser.add_argument('-e', '--exptime', type=float, default=defaults['exptime'], help='camera exposure time in seconds')
+parser.add_argument('-b', '--fitbox', type=int, default=default['fitbox'], help='window size for centroiding in pixels')
 parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
 parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
 parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
-parser.add_argument('-se', '--sim_errmax', type=float, default=0.01, help='measurement error max for simulator')
-parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=0.05, help='how often the simulator returns [0,0], indicating a bad match')
+parser.add_argument('-se', '--sim_errmax', type=float, default=defaults['sim_errmax'], help='measurement error max for simulator')
+parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=defaults['sim_badmatchfreq'], help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
 
 import numpy as np
 import math
 import time
-import collections
 
 class FVCHandler(object):
     f'''Provides a generic interface to the Fiber View Camera. Can support different
@@ -63,26 +65,21 @@ class FVCHandler(object):
         3. scale
 
     INPUTS:
-        camera ... string, identifying the camera hardware
+        params ... dict, shaped like the 'defaults' dictionary above 
         take_darks ... boolean, whether to take dark exposures (shutter closed)
         save_images ... boolean, whether to save FITS files etc to disk
         save_biases ... boolean, whether to save bias files to disk 
         printfunc ... function handle, to specify alternate to print (i.e. your logger)
     ''' 
-    def __init__(self,
-                 camera=inputs.camera,
-                 take_darks=inputs.take_darks,
-                 save_images=inputs.save_images,
-                 save_biases=inputs.save_biases,
-                 printfunc=print,
-                 ):
+    def __init__(self, params=defaults, take_darks=False, save_images=False,
+                 save_biases=False, printfunc=print):
         assert camera in cameras, f'unknown camera identifier {camera} (valid options are {cameras.keys()}'
-        self.camera = camera
+        self.camera = params['camera']
         self.printfunc = printfunc 
         self.min_energy = 0.05  # this is the minimum allowed value for the product peak*fwhm for any given dot
         self.max_attempts = 3  # max number of times to retry an image measurement (if poor dot quality) before quitting hard
-        self.exptime = inputs.exptime 
-        self.fitbox = inputs.fitbox
+        self.exptime = params['exptime']
+        self.fitbox = params['fitbox']
         driver_path = cameras[self.camera]['driver_path']
         sys.path.append(os.path.abspath(driver_path))
         if self.camera == 'SBIG':
@@ -92,13 +89,13 @@ class FVCHandler(object):
             self.sbig.write_fits = save_images
             self.max_counts = cameras[self.camera]['max_adu_counts']
          elif self.fvc_type == 'simulator':
-            self.sim_errmax = inputs.sim_errmax
-            self.sim_badmatchfreq = inputs.sim_badmatchfreq 
+            self.sim_errmax = params['sim_errmax']
+            self.sim_badmatchfreq = params['sim_badmatchfreq']
             self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_errmax} and bad match frequency of {self.sim_badmatchfreq}.')
-        self.x0_px = defaults['x0_px']  # x translation of origin within the image plane
-        self.y0_px = defaults['y0_px']  # y translation of origin within the image plane
-        self.angle_deg = defaults['angle_deg']  # [deg] rotation angle from image plane to object plane
-        self.mm_per_px = defaults['mm_per_px']  # scale factor from image plane to object plane
+        self.x0_px = params['x0_px']  # x translation of origin within the image plane
+        self.y0_px = params['y0_px']  # y translation of origin within the image plane
+        self.angle_deg = params['angle_deg']  # [deg] rotation angle from image plane to object plane
+        self.mm_per_px = params['mm_per_px']  # scale factor from image plane to object plane
 
     def measure_and_identify(self, expected, ref_keys=None):
         '''Calls for an FVC measurement, and returns a list of measured centroids.
@@ -285,15 +282,20 @@ class FVCHandler(object):
         return np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
 
 if __name__ == '__main__':
-    f = FVCHandler(fvc_type='SBIG')
-    n_objects = 1 
-    n_repeats = 1
-    f.min_energy = -np.Inf
+    params = defaults.copy()
+    for key in ['camera', 'exptime', 'fitbox', 'sim_errmax', 'sim_badmatchfreq']:
+        params[key] = getattr(inputs, key)
+    f = FVCHandler(params=params,
+                   take_darks=inputs.take_darks,
+                   save_images=inputs.save_images,
+                   save_biases=inputs.save_biases,
+                  ) 
+    f.min_energy = -np.Inf  # suppress checks on dot quality here, since standalone mode often for setup
     xy = []
     peaks = []
     fwhms = []
     energies = []
-    print('start taking ' + str(n_repeats) + ' images')
+    print(f'Taking {inputs.num_repeats} measurements')
     start_time = time.time()
     for i in range(n_repeats):
         these_xy,these_peaks,these_fwhms,imgfiles = f.measure(n_objects)
