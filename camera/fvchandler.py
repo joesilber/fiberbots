@@ -12,12 +12,9 @@ import math
 import time
 import numpy as np
 this_file_dir = os.path.realpath(os.path.dirname(__file__))
-print(this_file_dir)
-# root_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 os.chdir(this_file_dir)
 sys.path.append('../general')
 import globals as gl
-# from ..general import globals as gl
 
 # Supported cameras
 cameras = {
@@ -45,15 +42,15 @@ defaults = {'camera': 'SBIG',
 
 # Command line args for standalone mode, and defaults
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('-c', '--camera', type=str, default=default_camera, help=f'fiber view camera to use, valid options are {cameras.keys()}') 
+parser.add_argument('-c', '--camera', type=str, default=defaults['camera'], help=f'fiber view camera to use, valid options are {cameras.keys()}') 
 parser.add_argument('-n', '--num_dots', type=int, default=1, help=f'number of dots to centroid')
 parser.add_argument('-r', '--num_repeats', type=int, default=1, help=f'number of times to repeat the measurement')
-parser.add_argument('-e', '--exptime', type=float, default=defaults['exptime'], help='camera exposure time in seconds')
-parser.add_argument('-b', '--fitbox', type=int, default=default['fitbox'], help='window size for centroiding in pixels')
-parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
-parser.add_argument('-i', '--save_images', action='store_true', help='save image files to disk')
-parser.add_argument('-b', '--save_biases', action='store_true', help='save bias image files to disk')
 parser.add_argument('-p', '--plot', action='store_true', help='plot measured centroids')
+parser.add_argument('-e', '--exptime', type=float, default=defaults['exptime'], help='camera exposure time in seconds')
+parser.add_argument('-b', '--fitbox', type=int, default=defaults['fitbox'], help='window size for centroiding in pixels')
+parser.add_argument('-d', '--take_darks', action='store_true', help='take dark images (shutter closed). typically not needed, since we keep the test stand in a dark enough enclosure')
+parser.add_argument('-im', '--save_images', action='store_true', help='save image files to disk')
+parser.add_argument('-bs', '--save_biases', action='store_true', help='save bias image files to disk')
 parser.add_argument('-se', '--sim_errmax', type=float, default=defaults['sim_errmax'], help='measurement error max for simulator')
 parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=defaults['sim_badmatchfreq'], help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
@@ -289,11 +286,12 @@ class FVCHandler():
 if __name__ == '__main__':
     start_stamp = gl.timestamp()
     import simple_logger
-    path_prefix = os.path.append(gl.dirs['temp'], f'fvchandler_{start_stamp}')
+    if not os.path.isdir(gl.dirs['temp']):
+        os.mkdir(gl.dirs['temp'])
+    path_prefix = os.path.join(gl.dirs['temp'], f'fvchandler_{start_stamp}')
     log_path = f'{path_prefix}.log'
-    logger = simple_logger.start_logger(log_path)
+    logger, _, _ = simple_logger.start_logger(log_path)
     logger.info(f'Beginning fvchandler stand-alone measurement run')
-    logger.info(f'Log path: {log_path}')
     logger.info(f'Inputs: {inputs}')
     params = defaults.copy()
     for key in ['camera', 'exptime', 'fitbox', 'sim_errmax', 'sim_badmatchfreq']:

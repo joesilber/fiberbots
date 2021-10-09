@@ -5,9 +5,15 @@ import math
 from datetime import datetime
 
 # Directory locations
-dirs = {'temp': os.path.abspath('./temp'),
-        'data': os.path.abspath('./data'),
+this_file_dir = os.path.realpath(os.path.dirname(__file__))
+root_dir = os.path.realpath(os.path.join(this_file_dir, '..'))
+dirs = {'root': root_dir,
+        'temp': os.path.realpath(os.path.join(root_dir, 'temp')),
+        'data': os.path.realpath(os.path.join(root_dir, 'data')),
        }
+for write_dir in ['temp', 'data']:
+    if not os.path.isdir(dirs[write_dir]):
+        os.mkdir(dirs['temp'])
 
 # Motor constants
 gear_ratio = {}
