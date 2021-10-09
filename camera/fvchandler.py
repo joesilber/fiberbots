@@ -89,7 +89,7 @@ class FVCHandler(object):
             self.sbig.take_darks = take_darks 
             self.sbig.write_fits = save_images
             self.max_counts = cameras[self.camera]['max_adu_counts']
-         elif self.fvc_type == 'simulator':
+        elif self.camera == 'simulator':
             self.sim_errmax = params['sim_errmax']
             self.sim_badmatchfreq = params['sim_badmatchfreq']
             self.printfunc(f'FVCHandler is in simulator mode with max 2D errors of size {self.sim_errmax} and bad match frequency of {self.sim_badmatchfreq}.')
@@ -192,7 +192,7 @@ class FVCHandler(object):
             imgfiles = ['fake1.FITS', 'fake2.FITS']
         energies = [peaks[i] * fwhms[i] for i in range(len(peaks))]
         if any([e < self.min_energy for e in energies]):
-            self.printfunc(f'Poor dot quality found on image attempt {attempt} of {self.max_attempts}. Gaussian fit peak * energy was {min(energies))} which is less than the minimum threshold {self.min_energy}')
+            self.printfunc(f'Poor dot quality found on image attempt {attempt} of {self.max_attempts}. Gaussian fit peak * energy was {min(energies)} which is less than the minimum threshold {self.min_energy}')
             if attempt < self.max_attempts:
                 return self.measure_fvc_pixels(num_objects, attempt + 1)
             else:
@@ -304,8 +304,6 @@ if __name__ == '__main__':
     f.min_energy = -np.Inf  # suppress checks on dot quality here, since standalone mode often for setup
     xy = []
     peaks = []
-    fwhms = []
-    energies = []
     start_time = time.time()
     for i in range(inputs.num_repeats):
         meas_name = f'measurement {i+1} of {inputs.num_repeats}'
@@ -314,26 +312,24 @@ if __name__ == '__main__':
         if imgfiles:
             logger.info('Images for {meas_name} stored at {imgfiles}')
         xy.append(these_xy)
-        peaks.append(these_peaks)
-        fwhms.append(these_fwhms)
-        energies.append([these_peaks[i]*these_fwhms[i] for i in range(len(these_peaks))])
+        energies = [these_peaks[i]*these_fwhms[i] for i in range(len(these_peaks))]
         stats = f'Measurement {i + 1} of {inputs.num_repeats}:'
         stats += f'\nnumber of dots: {len(these_xy)}'
-        stats += f'\nxy positions: {these_xy}')
-        stats += f'\npeak brightnesses: {these_peaks}')
-        stats += f'\ndimmest: {min(these_peaks)}')
-        stats += f'\nbrightest: {max(these_peaks)}')
-        stats += f'\nfull-width half-maxes: {these_fwhms}')
-        stats += f'\nnarrowest: {min(these_fwhms)}')
-        stats += f'\nwidest: {max(these_fwhms)}')
-        stats += f'\nenergies = peaks * fwhms: {energies[-1]')
-        stats += f'\nlowest: {min(energies[-i])}')
-        stats += f'\nhighest: {max(energies[-i])}')
+        stats += f'\nxy positions: {these_xy}'
+        stats += f'\npeak brightnesses: {these_peaks}'
+        stats += f'\ndimmest: {min(these_peaks)}'
+        stats += f'\nbrightest: {max(these_peaks)}'
+        stats += f'\nfull-width half-maxes: {these_fwhms}'
+        stats += f'\nnarrowest: {min(these_fwhms)}'
+        stats += f'\nwidest: {max(these_fwhms)}'
+        stats += f'\nenergies = peaks * fwhms: {energies}'
+        stats += f'\nlowest: {min(energies)}'
+        stats += f'\nhighest: {max(energies)}'
         logger.info(stats)
     if inputs.plot:
         import matplotlib.pyplot as plt
         plt.ioff()
-        fig = plt.figure(figsize=(8.0, 6.0, dpi=150) 
+        fig = plt.figure(figsize=(8.0, 6.0), dpi=150) 
         cm = plt.cm.get_cmap('RdYlBu')
         colors = these_peaks
         sc = plt.scatter(x, y, c=colors, alpha=0.7, vmin=min(colors), vmax=max(colors), s=35, cmap=cm)
