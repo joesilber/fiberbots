@@ -79,8 +79,8 @@ class FVCHandler(object):
         assert camera in cameras, f'unknown camera identifier {camera} (valid options are {cameras.keys()}'
         self.camera = camera
         self.printfunc = printfunc 
-        self.min_energy = 0.  # 0.1 * .5 # this is the minimum allowed value for the product peak*fwhm for any given dot
-        self.max_attempts = 5  # max number of times to retry an image measurement (if poor dot quality) before quitting hard
+        self.min_energy = 0.05  # this is the minimum allowed value for the product peak*fwhm for any given dot
+        self.max_attempts = 3  # max number of times to retry an image measurement (if poor dot quality) before quitting hard
         self.exptime = inputs.exptime 
         self.fitbox = inputs.fitbox
         driver_path = cameras[self.camera]['driver_path']
@@ -99,42 +99,6 @@ class FVCHandler(object):
         self.y0_px = defaults['y0_px']  # y translation of origin within the image plane
         self.angle_deg = defaults['angle_deg']  # [deg] rotation angle from image plane to object plane
         self.mm_per_px = defaults['mm_per_px']  # scale factor from image plane to object plane
-
-    def measure_fvc_pixels(self, num_objects, attempt=1):
-        """Gets a measurement from the fiber view camera of the centroid positions
-        of all the dots of light landing on the CCD.
-        
-        INPUTS:  num_objects ... integer, number of dots FVC should look for
-        
-        OUTPUT:  xy          ... list of measured dot (x,y) positions in FVC pixel coordinates
-                 peaks       ... list of the peak brightness values for each dot
-                 fwhms       ... list of the fwhm for each dot
-                 imgfiles    ... list of image filenames that were produced
-
-        Lists xy, peaks, and fwhms are all in matching order.
-        """
-        xy = []
-        peaks = []
-        fwhms = []
-        imgfiles = []
-        if self.camera == 'SBIG':
-            self.sbig.exposure_time = self.exptime * 1000  # sbig_grab_cen thinks in milliseconds
-            xy, peaks, fwhms, elapsed_time, imgfiles = self.sbig.grab(num_objects)
-            peaks = [x/self.max_counts for x in peaks]
-        elif self.camera == 'simulator':
-            xy = np.random.uniform(low=0, high=1000, size=(num_objects,2)).tolist()
-            peaks = np.random.uniform(low=0.25, high=1.0, size=num_objects).tolist()
-            fwhms = np.random.uniform(low=1.0, high=2.0, size=num_objects).tolist()
-            imgfiles = ['fake1.FITS', 'fake2.FITS']
-        energies = [peaks[i] * fwhms[i] for i in range(len(peaks))]
-        if any([e < self.min_energy for e in energies]):
-            self.printfunc(f'Poor dot quality found on image attempt {attempt} of {self.max_attempts}. Gaussian fit peak * energy was {min(energies))} which is less than the minimum threshold {self.min_energy}')
-            if attempt < self.max_attempts:
-                return self.measure_fvc_pixels(num_objects, attempt + 1)
-            else:
-                self.printfunc(f'Max attempts {self.max_attempts} reached and still poor dot quality.')
-                sys.exit(0)
-        return xy, peaks, fwhms, imgfiles
 
     def measure_and_identify(self, expected, ref_keys=None):
         '''Calls for an FVC measurement, and returns a list of measured centroids.
@@ -186,6 +150,58 @@ class FVCHandler(object):
         measured = self.correct_using_ref(xyraw, expected, ref_keys)
         return measured, peaks, fwhms, imgfiles
 
+    def measure(self, num_objects=1):
+        '''Calls for an FVC image capture, transforms the centroids from pixels into
+        the units and orientation of the object plane.
+
+        INPUTS:  num_objects ... number of dots to look for in the captured image
+
+        Outputs are lists of:
+            (x,y) centroids
+            peak brightness values
+            full-width half-maxes
+            paths to any image files 
+        '''
+        xy_px, peaks, fwhms, imgfiles = self.measure_fvc_pixels(num_objects)
+        xy_mm = self.fvc_to_obs(xy_px)
+        return xy_mm, peaks, fwhms, imgfiles
+
+    def measure_fvc_pixels(self, num_objects, attempt=1):
+        """Gets a measurement from the fiber view camera of the centroid positions
+        of all the dots of light landing on the CCD.
+        
+        INPUTS:  num_objects ... integer, number of dots FVC should look for
+        
+        OUTPUT:  xy          ... list of measured dot (x,y) positions in FVC pixel coordinates
+                 peaks       ... list of the peak brightness values for each dot
+                 fwhms       ... list of the fwhm for each dot
+                 imgfiles    ... list of image filenames that were produced
+
+        Lists xy, peaks, and fwhms are all in matching order.
+        """
+        xy = []
+        peaks = []
+        fwhms = []
+        imgfiles = []
+        if self.camera == 'SBIG':
+            self.sbig.exposure_time = self.exptime * 1000  # sbig_grab_cen thinks in milliseconds
+            xy, peaks, fwhms, elapsed_time, imgfiles = self.sbig.grab(num_objects)
+            peaks = [x/self.max_counts for x in peaks]
+        elif self.camera == 'simulator':
+            xy = np.random.uniform(low=0, high=1000, size=(num_objects,2)).tolist()
+            peaks = np.random.uniform(low=0.25, high=1.0, size=num_objects).tolist()
+            fwhms = np.random.uniform(low=1.0, high=2.0, size=num_objects).tolist()
+            imgfiles = ['fake1.FITS', 'fake2.FITS']
+        energies = [peaks[i] * fwhms[i] for i in range(len(peaks))]
+        if any([e < self.min_energy for e in energies]):
+            self.printfunc(f'Poor dot quality found on image attempt {attempt} of {self.max_attempts}. Gaussian fit peak * energy was {min(energies))} which is less than the minimum threshold {self.min_energy}')
+            if attempt < self.max_attempts:
+                return self.measure_fvc_pixels(num_objects, attempt + 1)
+            else:
+                self.printfunc(f'Max attempts {self.max_attempts} reached and still poor dot quality.')
+                sys.exit(0)
+        return xy, peaks, fwhms, imgfiles
+
     def correct_using_ref(self, measured, expected, ref_keys):
         '''Calculates a correction to transform measured reference dots into expected,
         and then applies this to all the measured xy values.
@@ -197,15 +213,17 @@ class FVCHandler(object):
         OUTPUT:  dict with keys = identifiers, values = [x,y] pairs
         '''
         assert all([key in measured and key in expected for key in ref_keys]), f'missing ref_key {ref_key}'
-        xy_diff = [[measured[key][i] - expected[key][i] for i in [0,1]] for key in ref_keys]
-        if any(xy_diff):
-            xy_shift = np.median(xy_diff, axis=0).tolist()
-            -= xy_shift
-            = measured_pos_xy.tolist()
-            # If we have two or more ref dots that are widely enough spaced,
-            # consider applying rotation and scale corrections here.
-        else:
-            corrected = measured
+        x_shift, y_shift = 0, 0
+        if any(ref_keys):
+            x_diff = [measured[key][0] - expected[key][0] for key in ref_keys]
+            y_diff = [measured[key][1] - expected[key][1] for key in ref_keys]
+            x_shift = np.median(x_diff)
+            y_shift = np.median(y_diff)
+            # If we have two or more ref dots that are widely enough spaced, consider
+            # applying rotation and scale corrections here. You'd especially want to
+            # check for "widely-enough spaced", to ensure measurement noise isn't
+            # significant.
+        corrected = [[measured[key][0] + x_shift, measured[key][1] + y_shift] for key in measured]
         return corrected
 
     def sort_by_closeness(self, unknown_xy, expected_xy):
@@ -230,22 +248,6 @@ class FVCHandler(object):
             dist[expected_min_idx,:] = np.inf # disable used up "expected" row
             dist[:,unknown_min_idx] = np.inf # disable used up "unknown" column
         return xy, sorted_idxs
-
-    def measure(self, num_objects=1):
-        '''Calls for an FVC image capture, transforms the centroids from pixels into
-        the units and orientation of the object plane.
-
-        INPUTS:  num_objects ... number of dots to look for in the captured image
-
-        Outputs are lists of:
-            (x,y) centroids
-            peak brightness values
-            full-width half-maxes
-            paths to any image files 
-        '''
-        xy_px, peaks, fwhms, imgfiles = self.measure_fvc_pixels(num_objects)
-        xy_mm = self.fvc_to_obs(xy_px)
-        return xy_mm, peaks, fwhms, imgfiles
 
     def fvc_to_obs(self, xy_px):
         '''Convert a list or tuple of xy values in fvc pixel space to physical
