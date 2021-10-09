@@ -8,13 +8,21 @@ at the command line.
 import os
 import sys
 import argparse
-sys.path.append(os.path.abspath('../general'))
+import math
+import time
+import numpy as np
+this_file_dir = os.path.realpath(os.path.dirname(__file__))
+print(this_file_dir)
+# root_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+os.chdir(this_file_dir)
+sys.path.append('../general')
 import globals as gl
+# from ..general import globals as gl
 
 # Supported cameras
 cameras = {
     'SBIG': {
-        'driver_path': '../SBIG/',
+        'driver_path': './SBIG/',
         'max_adu_counts': 2**16 - 1,
         }, 
     'simulator': {
@@ -50,12 +58,8 @@ parser.add_argument('-se', '--sim_errmax', type=float, default=defaults['sim_err
 parser.add_argument('-sb', '--sim_badmatchfreq', type=float, default=defaults['sim_badmatchfreq'], help='how often the simulator returns [0,0], indicating a bad match')
 inputs = parser.parse_args()
 
-import numpy as np
-import math
-import time
-
-class FVCHandler(object):
-    f'''Provides a generic interface to the Fiber View Camera. Can support different
+class FVCHandler():
+    '''Provides a generic interface to the Fiber View Camera. Can support different
     particular FVC implementations, providing a common set of functions to call
     from positioner control scripts.
  
@@ -74,8 +78,8 @@ class FVCHandler(object):
     ''' 
     def __init__(self, params=defaults, take_darks=False, save_images=False,
                  save_biases=False, printfunc=print):
-        assert camera in cameras, f'unknown camera identifier {camera} (valid options are {cameras.keys()}'
         self.camera = params['camera']
+        assert self.camera in cameras, f'unknown camera identifier {self.camera} (valid options are {cameras.keys()}'
         self.printfunc = printfunc 
         self.min_energy = 0.05  # this is the minimum allowed value for the product peak*fwhm for any given dot
         self.max_attempts = 3  # max number of times to retry an image measurement (if poor dot quality) before quitting hard
