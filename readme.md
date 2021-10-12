@@ -40,7 +40,7 @@ Hint: Use function "timestamp()" in the globals module to guarantee consistency.
 ## `modules`
 Common modules, including camera and motor drivers, as well as general purpose globals and loggers, etc.
 
-###`modules/globals.py`
+### `modules/globals.py`
 A few common constants and helper functions, such as directories for saving files, and a single standard function for timestamping. We generally limit our usage of global variables, but this is useful for more "constant" common items.
 
 ### `modules/simple_logger.py`
