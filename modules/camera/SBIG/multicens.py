@@ -124,7 +124,7 @@ def multiCens(img, n_centroids_to_keep=2, verbose=False, write_fits=True, no_ots
 	bw=im2bw(img,level)
 
 	if write_fits:
-		filename = save_dir + 'binary_image.FITS'
+		filename = os.path.join(save_dir, 'binary_image.FITS')
 		try:
 			os.remove(filename)
 		except:
@@ -199,7 +199,7 @@ def multiCens(img, n_centroids_to_keep=2, verbose=False, write_fits=True, no_ots
 			should_save_sample_image = True
 		if should_save_sample_image:
 			if len(os.listdir()) < max_sample_files_to_save:
-				savefile = save_dir + 'peak_' + format(peak,'.1f') + '_fwhm_' + format(FWHMSub[-1],'.3f') + '_sizefitbox_' + str(size_fitbox) + '.FITS'
+				savefile = os.path.join(save_dir, 'peak_' + format(peak,'.1f') + '_fwhm_' + format(FWHMSub[-1],'.3f') + '_sizefitbox_' + str(size_fitbox) + '.FITS')
 				sample = pyfits.PrimaryHDU(img)
 				sample.writeto(savefile)
 				print('wrote a sample image file to ' + savefile)
