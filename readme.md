@@ -14,19 +14,6 @@ Scripts for controlling the motors and camera to do physical tests.
 
 As of 2021-09-21, the resulting data should be automatically saved in the "data" folder. See comments below.
 
-## `camera`
-### `camera/fvchandler.py`
-High-level interface to camera. Sends commands to the camera and interprets the resulting image by centroiding. 
-
-As of 2021-09-21 at LBNL, we are only using an SBIG STF-8300M camera. However `fvchandler.py` is intended to be flexible for using a different camera. In such cases, you would add new commands for the new driver in this module. Meanwhile, the pixel interpretation etc would be taken care of generically.
-
-### `camera/SBIG`
-Low-level drivers for SBIG camera.
-
-See file `readme` in this directory for instructions on SBIG driver installation and some environmental variables that need to be set.
-
-As of 2021-09-21, low-level centroiding code is also in this folder (c.f. `sbig_grab_cen.py` etcetera). This is not ideal modularization. A more flexible architecture would be to make the centroiding more abstracted from the picture-taking. It's not essential right now, but would be useful in the future. In such a case, we would put the new, generic, centroiding module up one directory, next to `fvchandler.py`.
-
 ## `data`
 As of 2021-09-21, all test data should be archived to GitHub in this folder.
 
@@ -50,19 +37,29 @@ or
 
 Hint: Use function "timestamp()" in the globals module to guarantee consistency.
 
-## `general`
-Used across multiple categories of scripts and modules.
+## `modules`
+Common modules, including camera and motor drivers, as well as general purpose globals and loggers, etc.
 
-###`globals.py`
+###`modules/globals.py`
 A few common constants and helper functions, such as directories for saving files, and a single standard function for timestamping. We generally limit our usage of global variables, but this is useful for more "constant" common items.
 
-### `simple_logger.py`
+### `modules/simple_logger.py`
 Common module for logging events in scripts etc.
 
-## `manuals`
-Store existing or external procedures, manuals, and other reference files etcetera here. However, new code documentation should be written in the `.md` format and version-controlled in GitHub (like this file). 
+### `modules/camera`
+#### `modules/camera/fvchandler.py`
+High-level interface to camera. Sends commands to the camera and interprets the resulting image by centroiding. 
 
-## `motors`
+As of 2021-09-21 at LBNL, we are only using an SBIG STF-8300M camera. However `fvchandler.py` is intended to be flexible for using a different camera. In such cases, you would add new commands for the new driver in this module. Meanwhile, the pixel interpretation etc would be taken care of generically.
+
+#### `modules/camera/SBIG`
+Low-level drivers for SBIG camera.
+
+See file `readme` in this directory for instructions on SBIG driver installation and some environmental variables that need to be set.
+
+As of 2021-09-21, low-level centroiding code is also in this folder (c.f. `sbig_grab_cen.py` etcetera). This is not ideal modularization. A more flexible architecture would be to make the centroiding more abstracted from the picture-taking. It's not essential right now, but would be useful in the future. In such a case, we would put the new, generic, centroiding module up one directory, next to `fvchandler.py`.
+
+### `modules/motors`
 Low-level control of the motors that drive the robots.
 
 As of 2021-09-21, the code is for electronics received from EPFL in 2020.
@@ -73,6 +70,8 @@ sudo adduser <username> dialout
 ~~~
 Then reboot. It is only necessary to do this setting one time for a given user.
 
+## `manuals`
+Store existing or external procedures, manuals, and other reference files etcetera here. However, new code documentation should be written in the `.md` format and version-controlled in GitHub (like this file). 
 ## `unused`
 Stuff that isn't currently in use, for example old code that we may want to use parts of. Items here may be nonfunctional, and for information only.
 
