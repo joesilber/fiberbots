@@ -22,6 +22,18 @@ gear_ratio['namiki'] = (46.0/14.0+1)**4  # namiki    "337:1", output rotation/mo
 gear_ratio['maxon'] = 4100625.0/14641.0  # maxon     "280:1", output rotation/motor input
 gear_ratio['faulhaber'] = 256.0  		 # faulhaber "256:1", output rotation/motor input
 
+# Camera default parameters
+fvc_defaults = {'camera': 'SBIG',
+                'exptime': 0.2,  # exposure time in sec
+                'fitbox': 5,  # ccd windowing for centroiding in pixels
+                'sim_errmax': 0.01,  # simulated measurement noise in mm
+                'sim_badmatchfreq': 0.05,  # simulated frequency of bad spot matches
+                'x0_px': 0.0,  # x translational offset in pixels
+                'y0_px': 0.0,  # y translational offset in pixels
+                'angle_deg': 0.0,  # camera mounting angle in deg
+                'mm_per_px': 1.0,  # plate scale, i.e. (mm at fibers) / (pixels at ccd)
+                }
+
 # Standard timestamps
 timestamp_fmt = '%Y%m%dT%H%M%S%z'
 def timestamp():
