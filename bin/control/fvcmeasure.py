@@ -63,7 +63,7 @@ if __name__ == '__main__':
         logger.info(f'Beginning {meas_name}')
         these_xy, these_peaks, these_fwhms, imgfiles = f.measure(inputs.num_dots)
         if imgfiles:
-            logger.info('Images for {meas_name} stored at {imgfiles}')
+            logger.info(f'Images for {meas_name} stored at {imgfiles}')
         xy.append(these_xy)
         energies = [these_peaks[i]*these_fwhms[i] for i in range(len(these_peaks))]
         statline = lambda name, value: f'\n{name:<26}... ' + (f'{value:.4f}' if gl.is_float(value) else f'{value}')
