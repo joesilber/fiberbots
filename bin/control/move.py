@@ -6,8 +6,13 @@ Created on Tue Sep 21 15:28:27 2021
 @author: ldrd
 """
 
+import math
 import sys
-sys.path.append('motors')
+this_file_dir = os.path.realpath(os.path.dirname(__file__))
+os.chdir(this_file_dir)
+sys.path.append('../../modules')
+sys.path.append('../../modules/motors')
+import globals as gl
 from tendo import Positioners
 
 # connect to positioners
@@ -22,14 +27,13 @@ for p in pos.available_positioners():
 
 # set gear reduction ratios
 # note how if we put mixed motor types on the test stand, the handling of motor_name etc will need to be more specific to each particular pos_id
-gear_ratios = {}
-gear_ratios['namiki'] = (46.0/14.0+1)**4  # namiki    "337:1", output rotation/motor input
-gear_ratios['maxon'] = 4100625.0/14641.0  # maxon     "280:1", output rotation/motor input
-gear_ratios['faulhaber'] = 125.0          # faulhaber "125:1", output rotation/motor input
+all_gear_ratios = gl.gear_ratio.copy() 
 motor_name = 'namiki'
+gear_ratio = all_gear_ratios[motor_name]
+approx_gear_ratio = math.round(gear_ratio)  # as of 2021-10-13, firmware only supports integers
 for p in pos.available_positioners():
-    pos[p].set_alpha_reduction_ratio(gear_ratios[motor_name])
-    pos[p].set_beta_reduction_ratio(gear_ratios[motor_name])
+    pos[p].set_alpha_reduction_ratio(approx_gear_ratio)
+    pos[p].set_beta_reduction_ratio(approx_gear_ratio)
 
 # notes per Ricardo 2021-10-05
 # - upon reboot, LEDs blink
