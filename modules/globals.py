@@ -7,10 +7,10 @@ from datetime import datetime
 
 # Directory locations
 this_file_dir = os.path.realpath(os.path.dirname(__file__))
-root_dir = os.path.realpath(os.path.join(this_file_dir, '..'))
+root_dir = os.path.realpath(os.path.join(this_file_dir, '../'))
 dirs = {'root': root_dir,
-        'temp': os.path.realpath(os.path.join(root_dir, 'temp')),
-        'data': os.path.realpath(os.path.join(root_dir, 'data')),
+        'temp': os.path.realpath(os.path.join(root_dir, 'temp/')),
+        'data': os.path.realpath(os.path.join(root_dir, 'data/')),
        }
 for write_dir in ['temp', 'data']:
     if not os.path.isdir(dirs[write_dir]):
@@ -25,7 +25,7 @@ gear_ratio['faulhaber'] = 256.0  		 # faulhaber "256:1", output rotation/motor i
 # Camera default parameters
 fvc_defaults = {'camera': 'SBIG',
                 'exptime': 0.2,  # exposure time in sec
-                'fitbox': 5,  # ccd windowing for centroiding in pixels
+                'fitbox': 15,  # ccd windowing for centroiding in pixels
                 'sim_errmax': 0.01,  # simulated measurement noise in mm
                 'sim_badmatchfreq': 0.05,  # simulated frequency of bad spot matches
                 'x0_px': 0.0,  # x translational offset in pixels

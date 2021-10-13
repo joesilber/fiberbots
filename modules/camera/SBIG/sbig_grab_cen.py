@@ -65,7 +65,7 @@ class SBIG_Grab_Cen(object):
 			D = self.start_exposure()
 			D = self.flip(D)
 			if self.write_fits:
-				filename = self.save_dir + 'SBIG_dark_image.FITS'
+				filename = os.path.join(self.save_dir, 'SBIG_dark_image.FITS')
 				try:
 					os.remove(filename)
 				except:
@@ -85,7 +85,7 @@ class SBIG_Grab_Cen(object):
 		if self.subtract_bias:
 			if self.verbose:
 				print("Subtracting Bias Image...")
-			filename = self.save_dir + 'SBIG_bias_image.FITS'
+			filename = os.path.join(self.save_dir, 'SBIG_bias_image.FITS')
 			try:
 				hdul = fits.open(filename)
 				B = hdul[0].data 
@@ -96,7 +96,7 @@ class SBIG_Grab_Cen(object):
 			B = np.zeros(np.shape(L), dtype=np.int32) 
 
 		if self.write_fits:
-			filename = self.save_dir + 'SBIG_light_image.FITS'
+			filename = os.path.join(self.save_dir, 'SBIG_light_image.FITS')
 			try:
 				os.remove(filename)
 			except:
@@ -109,7 +109,7 @@ class SBIG_Grab_Cen(object):
 			if a == 'N' or a == 'n' or a=='no' or a=='No' or a=='NO':
 				print('Please change self.write_bias in sbig_grab_cen.py to False')
 				import sys; sys.exit()
-			filename_bias=self.save_dir + 'SBIG_bias_image.FITS'
+			filename_bias = os.path.join(self.save_dir, 'SBIG_bias_image.FITS')
 			try:
 				os.remove(filename_bias)
 			except:
@@ -122,7 +122,7 @@ class SBIG_Grab_Cen(object):
 			D = np.zeros(np.shape(L), dtype=np.int32)
 		LD = np.array(L,dtype = np.int32) - np.array(D,dtype = np.int32)  - np.array(B,dtype = np.int32)
 		if self.write_fits and (self.take_darks or self.subtract_bias):
-			filename = self.save_dir + 'SBIG_diff_image.FITS'
+			filename = os.path.join(self.save_dir, 'SBIG_diff_image.FITS')
 			try:
 				os.remove(filename)
 			except:
