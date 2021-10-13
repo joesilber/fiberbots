@@ -6,7 +6,6 @@ Created on Tue Sep 21 15:28:27 2021
 @author: ldrd
 """
 
-import math
 import sys
 this_file_dir = os.path.realpath(os.path.dirname(__file__))
 os.chdir(this_file_dir)
@@ -30,7 +29,7 @@ for p in pos.available_positioners():
 all_gear_ratios = gl.gear_ratio.copy() 
 motor_name = 'namiki'
 gear_ratio = all_gear_ratios[motor_name]
-approx_gear_ratio = math.round(gear_ratio)  # as of 2021-10-13, firmware only supports integers
+approx_gear_ratio = round(gear_ratio)  # as of 2021-10-13, firmware only supports integers
 for p in pos.available_positioners():
     pos[p].set_alpha_reduction_ratio(approx_gear_ratio)
     pos[p].set_beta_reduction_ratio(approx_gear_ratio)
