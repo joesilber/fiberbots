@@ -82,4 +82,11 @@ git -c user.name="<your github user name>" -c user.email=<your email address> co
 ~~~
 Then paste in your Personal Access Token at the prompt `Username for 'https://github.com': `, and at the following password prompt just hit enter.
 
-
+To completely clean the git folder (i.e. make it look exactly like what is in the repo), you would do like:
+~~~
+mv ~/github/fiberbots
+git checkout main
+git pull
+git clean -dxf
+~~~
+So this would delete everything local you've done, including any log files in `temp` or new files in `data`. Obviously, you wouldn't do this on a whim, but good to know how to get to an "original" state.
