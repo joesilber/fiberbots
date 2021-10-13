@@ -30,3 +30,12 @@ motor_name = 'namiki'
 for p in pos.available_positioners():
     pos[p].set_alpha_reduction_ratio(gear_ratios[motor_name])
     pos[p].set_beta_reduction_ratio(gear_ratios[motor_name])
+
+# notes per Ricardo 2021-10-05
+# - upon reboot, LEDs blink
+# - reboot takes approx 10 sec
+# - this 10 sec wait is the bootloader mode
+# - numerous settings have to be done in the bootloader mode
+# - gear ratio (currently) must be an integer
+# - gear ratio can only be read or written while in bootloader mode
+# - Ricardo might send us a new firmware version
