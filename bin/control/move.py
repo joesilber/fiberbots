@@ -7,7 +7,7 @@ Created on Tue Sep 21 15:28:27 2021
 """
 
 import time
-import sys
+import os, sys
 this_file_dir = os.path.realpath(os.path.dirname(__file__))
 os.chdir(this_file_dir)
 sys.path.append('../../modules')
