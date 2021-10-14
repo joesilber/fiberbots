@@ -1206,6 +1206,7 @@ class PositionerUnit:
                         print(f"pos{answer_inst.pos_id}-> rebooting")
                     else:
                         print(f"pos{answer_inst.pos_id}-> request reboot error: {answer_inst.response}")
+        time.sleep(0.1)  # 2021-10-13 [Joe Silber] needed so that successive request_reboots don't interfere
         return answer
 
     def send_trajectory(self, alpha_traj, beta_traj):
