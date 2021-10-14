@@ -34,6 +34,9 @@ fvc_defaults = {'camera': 'SBIG',
                 'mm_per_px': 1.0,  # plate scale, i.e. (mm at fibers) / (pixels at ccd)
                 }
 
+# Firmware settings
+reboot_delay = 11.0  # sec
+
 # Standard timestamps
 timestamp_fmt = '%Y%m%dT%H%M%S%z'
 def timestamp():
