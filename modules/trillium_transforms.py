@@ -39,7 +39,7 @@ PARAMETERS:
 '''
 
 # For the Trillium2 and Trillium3 designs. Trillium1 had TEETH_1 = 10.
-nominal_teeth = [10, 15, 10, 10]  # See comments above. These correspond to [TEETH_0, TEETH_B1, TEETH_B2, TEETH_B3]
+nominal_teeth = [10, 15, 10, 10]  # See comments above. These correspond to [TEETH_0, TEETH_1, TEETH_2, TEETH_3]
 nominal_idler = [nominal_teeth[0] / nominal_teeth[1],  # ratio from b_box to bottom rank of idler gear
                  nominal_teeth[2] / nominal_teeth[3]]  # ratio from top rank of idler gear to beta arm shaft
 
