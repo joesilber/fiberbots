@@ -101,15 +101,3 @@ def gbl2arm(a_gbl, b_gbl, offset_a):
     a_arm = a_gbl - offset_a
     b_arm = b_gbl - a_gbl
     return a_arm, b_arm
-
-if __name__ == '__main__':
-    quit_strs = ['q', 'quit', 'exit']
-    import trillium_transforms as tt
-    while True:
-        arg = input('type a function command for this module >> ')
-        if arg.lower() in quit_strs:
-            break
-        try:
-            print(eval(f'tt.{arg}'))
-        except:
-            print(f'didn\'t recognize argument "{arg}"')
