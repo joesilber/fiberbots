@@ -80,16 +80,17 @@ def box2mot(box, gearbox_ratio):
     '''Converts from output shaft angle to motor angle.'''
     return box * gearbox_ratio
 
-def box2arm(a_box, b_box, idler=nom_idler, limits_a=nom_limits_a, limits_b=nom_limits_b):
+def box2arm(a_box, b_box, limits_a=nom_limits_a, limits_b=nom_limits_b, idler=nom_idler):
     '''Converts from alpha and beta gearmotors' output shaft angles to the observable
     angles of their kinematic arms. Limit-checking can be skipped with an argument
     like None, empty container, or False.
     '''
     a_arm = a_box
-    b_arm = a_arm*idler[1] + b_box*(idler[0]*idler[1])
-    a_arm = _apply_limits(a_arm, limits_a)
-    b_arm = _apply_limits(b_arm, limits_b)
-    return a_arm, b_arm
+    a_arm_limited = _apply_limits(a_arm, limits_a)  # ensure alpha limit will affect beta calculation 
+    b_arm = a_arm_limited*idler[1] + b_box*(idler[0]*idler[1])
+    b_arm_limited = _apply_limits(b_arm, limits_b)
+    a_arm_limited_by_beta = (b_arm_limited - b_box*(idler[0]*idler[1])) / idler[1]
+    return a_arm_limited_by_beta, b_arm_limited
 
 def arm2box(a_arm, b_arm, idler=nom_idler):
     '''Converts from the observable angles of the alpha and beta gearmotors' kinematic
