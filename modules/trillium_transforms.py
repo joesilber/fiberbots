@@ -57,13 +57,19 @@ PARAMETERS:
                         the robot at some other angle on the focal plane only changes OFFSET_A,
                         allowing the stop positions to be measured and recorded on a separate
                         test stand, prior to installation, with no further modification needed
-                        to them.)
+                        to them.) In practice we may distinguish between physical limits and
+                        software limits, which are typically set a few deg inward of the actual
+                        hard stops, to allow some margin for error.
 '''
 
 # For the Trillium2 and Trillium3 designs. Trillium1 had TEETH_1 = 10.
-nominal_teeth = [10, 15, 10, 10]  # See comments above. These correspond to [TEETH_0, TEETH_1, TEETH_2, TEETH_3]
-nominal_idler = [nominal_teeth[0] / nominal_teeth[1],  # ratio from b_box to bottom rank of idler gear
-                 nominal_teeth[2] / nominal_teeth[3]]  # ratio from top rank of idler gear to beta arm shaft
+nom_teeth = [10, 15, 10, 10]  # See comments above. These correspond to [TEETH_0, TEETH_1, TEETH_2, TEETH_3]
+nom_idler = [nom_teeth[0] / nom_teeth[1],  # ratio from b_box to bottom rank of idler gear
+             nom_teeth[2] / nom_teeth[3]]  # ratio from top rank of idler gear to beta arm shaft
+
+# Nominal travel limit positions.
+nom_limits_a = [-179.999, 180.]  # See comments above. These correspond to [LIMIT_A0, LIMIT_A1]
+nom_limits_b = [0., 180.]  # See comments above. These correspond to [LIMIT_B0, LIMIT_B1]
 
 
 def mot2box(mot, gearbox_ratio):
@@ -74,15 +80,18 @@ def box2mot(box, gearbox_ratio):
     '''Converts from output shaft angle to motor angle.'''
     return box * gearbox_ratio
 
-def box2arm(a_box, b_box, idler=nominal_idler):
+def box2arm(a_box, b_box, idler=nom_idler, limits_a=nom_limits_a, limits_b=nom_limits_b):
     '''Converts from alpha and beta gearmotors' output shaft angles to the observable
-    angles of their kinematic arms.
+    angles of their kinematic arms. Limit-checking can be skipped with an argument
+    like None, empty container, or False.
     '''
     a_arm = a_box
     b_arm = a_arm*idler[1] + b_box*(idler[0]*idler[1])
+    a_arm = _apply_limits(a_arm, limits_a)
+    b_arm = _apply_limits(b_arm, limits_b)
     return a_arm, b_arm
 
-def arm2box(a_arm, b_arm, idler=nominal_idler):
+def arm2box(a_arm, b_arm, idler=nom_idler):
     '''Converts from the observable angles of the alpha and beta gearmotors' kinematic
     arms to their output shaft angles.
     '''
@@ -103,3 +112,13 @@ def gbl2arm(a_gbl, b_gbl, offset_a):
     a_arm = a_gbl - offset_a
     b_arm = b_gbl - a_gbl
     return a_arm, b_arm
+
+def _apply_limits(value, limits):
+    '''Returns the argued value, bounded by the min and max of container limits.
+    Application of limits may be skipped (always returning value unmodified) by
+    arguing None, empty container, or False, etc.
+    '''
+    if limits:
+        value = min(value, max(limits))
+        value = max(value, min(limits))
+    return value
