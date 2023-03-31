@@ -50,12 +50,14 @@ PARAMETERS:
     OFFSET_A        ... Units deg. Angular zero-point of alpha axis within global coordinate
                         system. By convention, we define: a_gbl = a_arm + OFFSET_A
     
-    STOP_A0,        ... Units deg. Angular positions of alpha and beta physical hard stops.
-    STOP_A1,            These are given in the (a_arm, b_arm) coordinates, so that they are
-    STOP_B0,            local to a given robot. (I.e. mounting the robot at some other angle
-    STOP_B1             on the focal plane only changes OFFSET_A, allowing the stop positions
-                        to be measured and recorded on a separate test stand, prior to
-                        installation, with no further modification needed to them.)
+    LIMIT_A0,       ... Units deg. Angular positions of alpha and beta travel limits. Limit
+    LIMIT_A1,           "A0" is toward decreasing alpha, limit "A1" is toward increasing alpha,
+    LIMIT_B0,           and simillarly for beta. Limit values are given in (a_arm, b_arm)
+    LIMIT_B1            coordinates, so that they are local to a given robot. (I.e. mounting
+                        the robot at some other angle on the focal plane only changes OFFSET_A,
+                        allowing the stop positions to be measured and recorded on a separate
+                        test stand, prior to installation, with no further modification needed
+                        to them.)
 '''
 
 # For the Trillium2 and Trillium3 designs. Trillium1 had TEETH_1 = 10.
