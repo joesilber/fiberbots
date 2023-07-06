@@ -152,6 +152,8 @@ def cmd2lim(a_mot_cmd, b_mot_cmd, a_gear_ratio=1.0, b_gear_ratio=1.0):
     return angles, limits 
 
 if __name__ == '__main__':
+
+    # try converting commands at motor to gearbox and arm angles, hardstop-limited
     a_mot_cmd = [-179, -179, -179, -90, -90, -90, 0, 0, 0, 90, 90, 90, 179, 179, 179]
     b_mot_cmd = [0, 90, 180]*5
     for i in range(len(a_mot_cmd)):
@@ -161,4 +163,13 @@ if __name__ == '__main__':
         for k, v in limits.items():
             print(f'{k}: {v}')
         print('')
-    
+
+    # try converting desired arm angles to necessary gearbox angles
+    print('\n---------\n')
+    a_arm = [-179, -179, -179, -90, -90, -90, 0, 0, 0, 90, 90, 90, 179, 179, 179]
+    b_arm = [0, 90, 180]*5
+    for i in range(len(a_arm)):
+        a_box, b_box = arm2box(a_arm[i], b_arm[i])
+        txt = f'desired (a_arm, b_arm) = ({a_arm[i]:4.0f}, {b_arm[i]:4.0f})'
+        txt += f' -->  required (a_box, b_box) = ({a_box:6.1f}, {b_box:6.1f})'
+        print(txt)
