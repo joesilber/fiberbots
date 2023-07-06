@@ -172,4 +172,13 @@ if __name__ == '__main__':
         a_box, b_box = arm2box(a_arm[i], b_arm[i])
         txt = f'desired (a_arm, b_arm) = ({a_arm[i]:4.0f}, {b_arm[i]:4.0f})'
         txt += f' -->  required (a_box, b_box) = ({a_box:6.1f}, {b_box:6.1f})'
+        
+        # also try inverting this transformation
+        a_arm_limited_by_beta, b_arm_limited, a_hardstop_contact, b_hardstop_contact, a_limited_by_b_contact = box2arm(a_box, b_box)
+        a_arm2 = a_arm_limited_by_beta
+        b_arm2 = b_arm_limited
+        tol = 1e-6
+        inversion_succeeded = abs(a_arm2 - a_arm[i]) < tol and abs(b_arm2 - b_arm[i]) < tol 
+        inversion_text = 'SUCCESS' if inversion_succeeded else 'FAIL'
+        txt += f' ... inverse transform --> (a_arm\', b_arm\') = ({a_arm2:6.1f}, {b_arm2:6.1f}) [{inversion_text}]'
         print(txt)
