@@ -83,17 +83,21 @@ def box2mot(box, gearbox_ratio):
 def box2arm(a_box, b_box, limits_a=nom_limits_a, limits_b=nom_limits_b, idler=nom_idler):
     '''Converts from alpha and beta gearmotors' output shaft angles to the observable
     angles of their kinematic arms. Limit-checking can be skipped with an argument
-    like None, empty container, or False.
+    like None, empty container, or False. The return tuple has:
+        a_arm, b_arm, contacts
+    where contacts is a dictionary describing what if any hardstop contacts may have occurred.
     '''
     a_arm = a_box
     a_arm_limited = _apply_limits(a_arm, limits_a)  # ensure alpha limit will affect beta calculation 
     b_arm = a_arm_limited*idler[1] + b_box*(idler[0]*idler[1])
     b_arm_limited = _apply_limits(b_arm, limits_b)
     a_arm_limited_by_beta = (b_arm_limited - b_box*(idler[0]*idler[1])) / idler[1]
-    a_hardstop_contact = a_arm_limited != a_arm
-    b_hardstop_contact = b_arm_limited != b_arm
-    a_limited_by_b_contact = a_arm_limited_by_beta != a_arm_limited
-    return a_arm_limited_by_beta, b_arm_limited, a_hardstop_contact, b_hardstop_contact, a_limited_by_b_contact
+    contacts = {
+        'alpha hardstop contact': a_arm_limited != a_arm,
+        'beta hardstop contact': b_arm_limited != b_arm,
+        'alpha limited by beta contact': a_arm_limited_by_beta != a_arm_limited,
+    }
+    return a_arm_limited_by_beta, b_arm_limited, contacts
 
 def arm2box(a_arm, b_arm, idler=nom_idler):
     '''Converts from the observable angles of the alpha and beta gearmotors' kinematic
@@ -127,44 +131,10 @@ def _apply_limits(value, limits):
         value = max(value, min(limits))
     return value
 
-def cmd2lim(a_mot_cmd, b_mot_cmd, a_gear_ratio=1.0, b_gear_ratio=1.0):
-    '''Calculate hardstop-limited angles of trillium unit, given commanded motor angles.
-    Returns a dict of the calculated angles, and a dict indicating whether either axis
-    struck its hardstop.
-    '''
-    a_box_cmd = mot2box(a_mot_cmd, a_gear_ratio)  # actual a_box (calculated below) will be limited by hardstops
-    b_box_cmd = mot2box(b_mot_cmd, b_gear_ratio)  # actual b_box (calculated below) will be limited by hardstops
-    a_arm, b_arm, a_hardstop_contact, b_hardstop_contact, a_limited_by_b_contact = box2arm(a_box_cmd, b_box_cmd)
-    a_box, b_box = arm2box(a_arm, b_arm)
-    a_mot = box2mot(a_box, a_gear_ratio) 
-    b_mot = box2mot(b_box, b_gear_ratio) 
-    angles = {
-        'a_mot_cmd': a_mot_cmd, 'b_mot_cmd': b_mot_cmd,
-        'a_mot': a_mot, 'b_mot': b_mot,
-        'a_box': a_box, 'b_box': b_box,
-        'a_arm': a_arm, 'b_arm': b_arm,
-        }
-    limits = {
-        'a_hardstop_contact': a_hardstop_contact,
-        'b_hardstop_contact': b_hardstop_contact,
-        'a_limited_by_b_contact': a_limited_by_b_contact,
-    }
-    return angles, limits 
-
 if __name__ == '__main__':
 
-    # try converting commands at motor to gearbox and arm angles, hardstop-limited
-    a_mot_cmd = [-179, -179, -179, -90, -90, -90, 0, 0, 0, 90, 90, 90, 179, 179, 179]
-    b_mot_cmd = [0, 90, 180]*5
-    for i in range(len(a_mot_cmd)):
-        angles, limits = cmd2lim(a_mot_cmd[i], b_mot_cmd[i])
-        angles_text = ', '.join([f'{k}: {v:4.0f}' for k, v in angles.items()])
-        print(angles_text)
-        for k, v in limits.items():
-            print(f'{k}: {v}')
-        print('')
-
-    # try converting desired arm angles to necessary gearbox angles
+   # demonstrate converting desired arm angles to necessary gearbox angles,
+   # then inverting the transformation back to arm angles
     print('\n---------\n')
     a_arm = [-179, -179, -179, -90, -90, -90, 0, 0, 0, 90, 90, 90, 179, 179, 179]
     b_arm = [0, 90, 180]*5
@@ -172,13 +142,9 @@ if __name__ == '__main__':
         a_box, b_box = arm2box(a_arm[i], b_arm[i])
         txt = f'desired (a_arm, b_arm) = ({a_arm[i]:4.0f}, {b_arm[i]:4.0f})'
         txt += f' -->  required (a_box, b_box) = ({a_box:6.1f}, {b_box:6.1f})'
-        
-        # also try inverting this transformation
-        a_arm_limited_by_beta, b_arm_limited, a_hardstop_contact, b_hardstop_contact, a_limited_by_b_contact = box2arm(a_box, b_box)
-        a_arm2 = a_arm_limited_by_beta
-        b_arm2 = b_arm_limited
+        a_arm2, b_arm2, contacts = box2arm(a_box, b_box)
         tol = 1e-6
         inversion_succeeded = abs(a_arm2 - a_arm[i]) < tol and abs(b_arm2 - b_arm[i]) < tol 
-        inversion_text = 'SUCCESS' if inversion_succeeded else 'FAIL'
+        inversion_text = 'SUCCESS' if inversion_succeeded else 'FAILED'
         txt += f' ... inverse transform --> (a_arm\', b_arm\') = ({a_arm2:6.1f}, {b_arm2:6.1f}) [{inversion_text}]'
         print(txt)
