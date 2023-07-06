@@ -68,8 +68,8 @@ nom_idler = [nom_teeth[0] / nom_teeth[1],  # ratio from b_box to bottom rank of 
              nom_teeth[2] / nom_teeth[3]]  # ratio from top rank of idler gear to beta arm shaft
 
 # Nominal travel limit positions.
-nom_limits_a = [-179.999, 180.]  # See comments above. These correspond to [LIMIT_A0, LIMIT_A1]
-nom_limits_b = [0., 180.]  # See comments above. These correspond to [LIMIT_B0, LIMIT_B1]
+nom_limits_a = [-179.999, 180.]  # See comments above. These correspond to [LIMIT_A0, LIMIT_A1], and apply to a_arm coordinates.
+nom_limits_b = [0., 180.]  # See comments above. These correspond to [LIMIT_B0, LIMIT_B1], and apply to b_arm coordinates.
 
 
 def mot2box(mot, gearbox_ratio):
