@@ -36,16 +36,19 @@ PARAMETERS:
 
     GEARBOX_A,      ... Unitless floats. Ratios of motor shaft to output shaft for alpha
     GEARBOX_B           and beta gearmotors. For example, on DESI this ratio was ~337:1
-                        for both the theta and phi motors.
+                        for both the theta and phi motors. This does *not* include the
+                        spur gears (defined by TEETH_0, _1, _2, _3 below).
     
-    TEETH_0         ... Unitless int. Number of teeth on gear at end of beta gearmotor's
+    TEETH_0         ... Unitless int. Number of teeth on spur gear at end of beta gearmotor's
                         output shaft.
     
-    TEETH_1         ... Unitless int. Number of teeth on bottom of idler gear.
+    TEETH_1         ... Unitless int. Number of teeth on bottom of idler spur gear. These
+                        teeth co-rotate with TEETH_2.
 
-    TEETH_2         ... Unitless int. Number of teeth on top of idler gear.
+    TEETH_2         ... Unitless int. Number of teeth on top of idler spur gear. These teeth
+                        co-rotate with TEETH_1.
 
-    TEETH_3         ... Unitless int. Number of teeth on gear at bottom of beta arm shaft.
+    TEETH_3         ... Unitless int. Number of teeth on spur gear at bottom of beta arm shaft.
 
     OFFSET_A        ... Units deg. Angular zero-point of alpha axis within global coordinate
                         system. By convention, we define: a_gbl = a_arm + OFFSET_A
